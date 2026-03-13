@@ -2,6 +2,7 @@ import { Gitgraph, TemplateName, templateExtend } from "@gitgraph/react";
 import type { GitgraphUserApi } from "@gitgraph/core";
 import { Clock3, GitCommitHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n, type Locale } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,7 @@ function renderCommitMessage(
   commit: CommitRecord,
   active: boolean,
   messageWidth: number,
+  locale: Locale,
   onSelectCommit: (oid: string) => void,
 ) {
   return (
@@ -163,7 +165,7 @@ function renderCommitMessage(
             {commit.shortOid}
           </div>
           <div className="hidden min-w-[112px] text-right text-sm text-muted-foreground lg:block">
-            {formatRelativeTime(commit.authoredAt)}
+            {formatRelativeTime(commit.authoredAt, locale)}
           </div>
         </button>
       </div>
@@ -177,6 +179,7 @@ function buildGraph(
   selectedCommit: string | null,
   onSelectCommit: (oid: string) => void,
   messageWidth: number,
+  locale: Locale,
 ) {
   gitgraph.clear();
 
@@ -198,6 +201,7 @@ function buildGraph(
           commit,
           selectedCommit === commit.oid,
           messageWidth,
+          locale,
           onSelectCommit,
         ),
     };
@@ -271,6 +275,7 @@ export function HistoryList({
   selectedCommit,
   onSelectCommit,
 }: HistoryListProps) {
+  const { locale, t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [messageWidth, setMessageWidth] = useState(960);
 
@@ -301,19 +306,19 @@ export function HistoryList({
       <CardHeader className="border-b border-border/70 pb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle>All Commits</CardTitle>
+            <CardTitle>{t("history.allCommits")}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Commit graph costruito con `@gitgraph/react`.
+              {t("history.graphDescription")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <GitCommitHorizontal className="size-3.5" />
-              {commits.length} commit
+              {t("history.commitCount", { count: commits.length })}
             </span>
             <span className="inline-flex items-center gap-2">
               <Clock3 className="size-3.5" />
-              ordine recente
+              {t("history.recentOrder")}
             </span>
           </div>
         </div>
@@ -322,7 +327,7 @@ export function HistoryList({
       <CardContent ref={containerRef} className="min-h-0 flex-1 overflow-auto p-0">
         {commits.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">
-            Nessun commit disponibile.
+            {t("history.noCommits")}
           </div>
         ) : (
           <div className="commit-graph min-w-[860px] px-4 py-4">
@@ -334,6 +339,7 @@ export function HistoryList({
                   selectedCommit,
                   onSelectCommit,
                   messageWidth,
+                  locale,
                 )
               }
             </Gitgraph>

@@ -5,10 +5,9 @@ use git::{
     create_branch as create_branch_impl, fetch_all as fetch_all_impl,
     load_environment as load_environment_impl, merge_branches as merge_branches_impl,
     open_repository as open_repository_impl, pull_with_stash as pull_with_stash_impl,
-    push_current_branch as push_current_branch_impl,
-    read_commit_detail as read_commit_detail_impl, read_file_diff as read_file_diff_impl,
-    set_stage_state as set_stage_state_impl, EnvironmentInfo, OperationResult, RepoRequest,
-    RepositorySnapshot,
+    push_current_branch as push_current_branch_impl, read_commit_detail as read_commit_detail_impl,
+    read_file_diff as read_file_diff_impl, set_stage_state as set_stage_state_impl,
+    EnvironmentInfo, OperationResult, RepoRequest, RepositorySnapshot,
 };
 
 #[tauri::command]

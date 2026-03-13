@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    process::Command,
-};
+use std::{collections::BTreeMap, path::PathBuf, process::Command};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -142,9 +138,17 @@ pub struct FileDiff {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TranslationMessage {
+    pub key: &'static str,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub values: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OperationResult {
-    pub message: String,
-    pub warnings: Vec<String>,
+    pub message: TranslationMessage,
+    pub warnings: Vec<TranslationMessage>,
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +162,28 @@ struct RepoTarget {
     mode: RepoMode,
     root_path: String,
     display_path: String,
+}
+
+fn translation_message(key: &'static str) -> TranslationMessage {
+    TranslationMessage {
+        key,
+        values: BTreeMap::new(),
+    }
+}
+
+fn translation_message_with_values(
+    key: &'static str,
+    values: impl IntoIterator<Item = (&'static str, String)>,
+) -> TranslationMessage {
+    let mut mapped_values = BTreeMap::new();
+    for (name, value) in values {
+        mapped_values.insert(name.to_string(), value);
+    }
+
+    TranslationMessage {
+        key,
+        values: mapped_values,
+    }
 }
 
 pub fn load_environment() -> Result<EnvironmentInfo, String> {
@@ -208,10 +234,12 @@ pub fn read_commit_detail(request: &RepoRequest, revision: &str) -> Result<Commi
             revision,
         ],
     )?;
-    let (metadata, diff) = output.split_once('\u{001e}').unwrap_or((output.as_str(), ""));
+    let (metadata, diff) = output
+        .split_once('\u{001e}')
+        .unwrap_or((output.as_str(), ""));
     let fields: Vec<&str> = metadata.split('\u{001f}').collect();
     if fields.len() < 6 {
-        return Err("Impossibile leggere i dettagli del commit richiesto.".to_string());
+        return Err("Unable to read the requested commit details.".to_string());
     }
 
     Ok(CommitDetail {
@@ -235,7 +263,11 @@ pub fn read_file_diff(
     let diff = if staged {
         run_git(&target, &["diff", "--cached", "--", path])?
     } else if kind == "untracked" {
-        run_git_allow_codes(&target, &["diff", "--no-index", "--", "/dev/null", path], &[0, 1])?
+        run_git_allow_codes(
+            &target,
+            &["diff", "--no-index", "--", "/dev/null", path],
+            &[0, 1],
+        )?
     } else {
         run_git(&target, &["diff", "--", path])?
     };
@@ -243,11 +275,7 @@ pub fn read_file_diff(
     Ok(FileDiff {
         path: path.to_string(),
         staged,
-        diff: if diff.trim().is_empty() {
-            "Nessuna patch testuale disponibile per questo file.".to_string()
-        } else {
-            diff
-        },
+        diff,
     })
 }
 
@@ -257,7 +285,7 @@ pub fn set_stage_state(
     staged: bool,
 ) -> Result<OperationResult, String> {
     if paths.is_empty() {
-        return Err("Nessun file selezionato.".to_string());
+        return Err("No file selected.".to_string());
     }
 
     let target = resolve_target(request)?;
@@ -266,7 +294,11 @@ pub fn set_stage_state(
         args.extend(paths.iter().cloned());
         run_git_owned(&target, &args, &[0])?;
     } else {
-        let mut args = vec!["restore".to_string(), "--staged".to_string(), "--".to_string()];
+        let mut args = vec![
+            "restore".to_string(),
+            "--staged".to_string(),
+            "--".to_string(),
+        ];
         args.extend(paths.iter().cloned());
 
         if run_git_owned(&target, &args, &[0]).is_err() {
@@ -283,9 +315,15 @@ pub fn set_stage_state(
 
     Ok(OperationResult {
         message: if staged {
-            format!("{} file staged.", paths.len())
+            translation_message_with_values(
+                "result.stage.success",
+                [("count", paths.len().to_string())],
+            )
         } else {
-            format!("{} file unstaged.", paths.len())
+            translation_message_with_values(
+                "result.unstage.success",
+                [("count", paths.len().to_string())],
+            )
         },
         warnings: Vec::new(),
     })
@@ -296,7 +334,7 @@ pub fn commit_changes(request: &RepoRequest, message: &str) -> Result<OperationR
     run_git(&target, &["commit", "-m", message])?;
 
     Ok(OperationResult {
-        message: "Commit creato correttamente.".to_string(),
+        message: translation_message("result.commit.success"),
         warnings: Vec::new(),
     })
 }
@@ -306,7 +344,10 @@ pub fn checkout_branch(request: &RepoRequest, branch: &str) -> Result<OperationR
     run_git(&target, &["checkout", branch])?;
 
     Ok(OperationResult {
-        message: format!("Checkout completato su {branch}."),
+        message: translation_message_with_values(
+            "result.checkout.success",
+            [("branch", branch.to_string())],
+        ),
         warnings: Vec::new(),
     })
 }
@@ -316,7 +357,10 @@ pub fn create_branch(request: &RepoRequest, branch: &str) -> Result<OperationRes
     run_git(&target, &["checkout", "-b", branch])?;
 
     Ok(OperationResult {
-        message: format!("Branch {branch} creato e attivato."),
+        message: translation_message_with_values(
+            "result.createBranch.success",
+            [("branch", branch.to_string())],
+        ),
         warnings: Vec::new(),
     })
 }
@@ -326,14 +370,17 @@ pub fn fetch_all(request: &RepoRequest) -> Result<OperationResult, String> {
     run_git(&target, &["fetch", "--all", "--prune"])?;
 
     Ok(OperationResult {
-        message: "Fetch completato su tutti i remoti.".to_string(),
+        message: translation_message("result.fetch.success"),
         warnings: Vec::new(),
     })
 }
 
 pub fn pull_with_stash(request: &RepoRequest) -> Result<OperationResult, String> {
     let target = resolve_target(request)?;
-    let dirty = !run_git(&target, &["status", "--porcelain"]).unwrap_or_default().trim().is_empty();
+    let dirty = !run_git(&target, &["status", "--porcelain"])
+        .unwrap_or_default()
+        .trim()
+        .is_empty();
     let mut warnings = Vec::new();
 
     if dirty {
@@ -342,13 +389,13 @@ pub fn pull_with_stash(request: &RepoRequest) -> Result<OperationResult, String>
             &target,
             &["stash", "push", "--include-untracked", "-m", &message],
         )?;
-        warnings.push("Working tree stashato automaticamente prima del pull.".to_string());
+        warnings.push(translation_message("result.pull.stashCreated"));
     }
 
     if let Err(error) = run_git(&target, &["pull", "--prune", "--tags"]) {
         if dirty {
             return Err(format!(
-                "{error} Lo stash automatico è stato mantenuto in stash@{{0}}."
+                "Pull failed after creating an automatic stash. The stash was kept in stash@{{0}}: {error}"
             ));
         }
         return Err(error);
@@ -358,23 +405,25 @@ pub fn pull_with_stash(request: &RepoRequest) -> Result<OperationResult, String>
         match run_git(&target, &["stash", "apply", "--index", "stash@{0}"]) {
             Ok(_) => {
                 let _ = run_git(&target, &["stash", "drop", "stash@{0}"]);
-                warnings.push("Stash riapplicato correttamente dopo il pull.".to_string());
+                warnings.push(translation_message("result.pull.stashApplied"));
             }
-            Err(error) => warnings.push(format!(
-                "Pull riuscito ma il re-apply dello stash richiede attenzione manuale: {error}"
+            Err(error) => warnings.push(translation_message_with_values(
+                "result.pull.stashApplyManual",
+                [("error", error)],
             )),
         }
     }
 
     Ok(OperationResult {
-        message: "Pull completato.".to_string(),
+        message: translation_message("result.pull.success"),
         warnings,
     })
 }
 
 pub fn push_current_branch(request: &RepoRequest) -> Result<OperationResult, String> {
     let target = resolve_target(request)?;
-    let branch = current_branch(&target)?.ok_or_else(|| "HEAD detached: impossibile eseguire push.".to_string())?;
+    let branch = current_branch(&target)?
+        .ok_or_else(|| "Detached HEAD: unable to push the current branch.".to_string())?;
 
     if let Some(_upstream) = current_upstream(&target)? {
         run_git(&target, &["push"])?;
@@ -388,7 +437,7 @@ pub fn push_current_branch(request: &RepoRequest) -> Result<OperationResult, Str
     }
 
     Ok(OperationResult {
-        message: format!("Push completato per {branch}."),
+        message: translation_message_with_values("result.push.success", [("branch", branch)]),
         warnings: Vec::new(),
     })
 }
@@ -403,13 +452,22 @@ pub fn merge_branches(
 
     if current_branch(&target)?.as_deref() != Some(target_branch) {
         run_git(&target, &["checkout", target_branch])?;
-        warnings.push(format!("Checkout automatico su {target_branch}."));
+        warnings.push(translation_message_with_values(
+            "result.merge.autoCheckout",
+            [("targetBranch", target_branch.to_string())],
+        ));
     }
 
     run_git(&target, &["merge", "--no-ff", source_branch])?;
 
     Ok(OperationResult {
-        message: format!("{source_branch} mergiato in {target_branch}."),
+        message: translation_message_with_values(
+            "result.merge.success",
+            [
+                ("sourceBranch", source_branch.to_string()),
+                ("targetBranch", target_branch.to_string()),
+            ],
+        ),
         warnings,
     })
 }
@@ -417,7 +475,7 @@ pub fn merge_branches(
 fn resolve_target(request: &RepoRequest) -> Result<RepoTarget, String> {
     let input_path = request.path.trim();
     if input_path.is_empty() {
-        return Err("Il percorso repository è vuoto.".to_string());
+        return Err("The repository path is empty.".to_string());
     }
 
     let provisional = classify_input(input_path, request.wsl_distro.clone())?;
@@ -442,7 +500,9 @@ fn resolve_target(request: &RepoRequest) -> Result<RepoTarget, String> {
 fn classify_input(path: &str, distro_hint: Option<String>) -> Result<RepoTarget, String> {
     if let Some((distro, linux_path)) = parse_wsl_scheme(path) {
         return Ok(RepoTarget {
-            mode: RepoMode::Wsl { distro: distro.clone() },
+            mode: RepoMode::Wsl {
+                distro: distro.clone(),
+            },
             display_path: format!("wsl://{distro}{linux_path}"),
             root_path: linux_path,
         });
@@ -450,7 +510,9 @@ fn classify_input(path: &str, distro_hint: Option<String>) -> Result<RepoTarget,
 
     if let Some((distro, linux_path)) = parse_wsl_unc(path) {
         return Ok(RepoTarget {
-            mode: RepoMode::Wsl { distro: distro.clone() },
+            mode: RepoMode::Wsl {
+                distro: distro.clone(),
+            },
             display_path: format!("wsl://{distro}{linux_path}"),
             root_path: linux_path,
         });
@@ -458,11 +520,13 @@ fn classify_input(path: &str, distro_hint: Option<String>) -> Result<RepoTarget,
 
     if cfg!(target_os = "windows") && path.starts_with('/') {
         let distro = distro_hint.ok_or_else(|| {
-            "Percorso POSIX rilevato da Windows: seleziona una distro WSL oppure usa wsl://<distro>/...".to_string()
+            "A POSIX path was detected on Windows. Select a WSL distro or use wsl://<distro>/...".to_string()
         })?;
 
         return Ok(RepoTarget {
-            mode: RepoMode::Wsl { distro: distro.clone() },
+            mode: RepoMode::Wsl {
+                distro: distro.clone(),
+            },
             display_path: format!("wsl://{distro}{path}"),
             root_path: path.to_string(),
         });
@@ -504,7 +568,7 @@ fn list_wsl_distros() -> Result<Vec<String>, String> {
     let output = Command::new("wsl.exe")
         .args(["-l", "-q"])
         .output()
-        .map_err(|error| format!("Impossibile eseguire wsl.exe: {error}"))?;
+        .map_err(|error| format!("Unable to execute wsl.exe: {error}"))?;
 
     if !output.status.success() {
         return Ok(Vec::new());
@@ -545,7 +609,11 @@ fn git_command(target: &RepoTarget) -> Command {
             command
         }
         RepoMode::Wsl { distro } => {
-            let executable = if cfg!(target_os = "windows") { "wsl.exe" } else { "wsl" };
+            let executable = if cfg!(target_os = "windows") {
+                "wsl.exe"
+            } else {
+                "wsl"
+            };
             let mut command = Command::new(executable);
             command
                 .arg("-d")
@@ -562,7 +630,11 @@ fn run_git(target: &RepoTarget, args: &[&str]) -> Result<String, String> {
     run_git_allow_codes(target, args, &[0])
 }
 
-fn run_git_owned(target: &RepoTarget, args: &[String], allowed_codes: &[i32]) -> Result<String, String> {
+fn run_git_owned(
+    target: &RepoTarget,
+    args: &[String],
+    allowed_codes: &[i32],
+) -> Result<String, String> {
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_git_allow_codes(target, &refs, allowed_codes)
 }
@@ -575,7 +647,7 @@ fn run_git_allow_codes(
     let output = git_command(target)
         .args(args)
         .output()
-        .map_err(|error| format!("Impossibile eseguire git: {error}"))?;
+        .map_err(|error| format!("Unable to execute git: {error}"))?;
 
     let code = output.status.code().unwrap_or(-1);
     let stdout = String::from_utf8_lossy(&output.stdout)
@@ -772,10 +844,20 @@ fn parse_status(output: &str) -> (HeadSummary, WorkingTreeStatus) {
         .count();
     let unstaged_count = changes
         .iter()
-        .filter(|change| change.worktree_status != "." && change.kind != "untracked" && change.kind != "conflicted")
+        .filter(|change| {
+            change.worktree_status != "."
+                && change.kind != "untracked"
+                && change.kind != "conflicted"
+        })
         .count();
-    let untracked_count = changes.iter().filter(|change| change.kind == "untracked").count();
-    let conflicted_count = changes.iter().filter(|change| change.kind == "conflicted").count();
+    let untracked_count = changes
+        .iter()
+        .filter(|change| change.kind == "untracked")
+        .count();
+    let conflicted_count = changes
+        .iter()
+        .filter(|change| change.kind == "conflicted")
+        .count();
 
     (
         HeadSummary {
@@ -845,7 +927,11 @@ fn normalize_status(value: char) -> String {
     }
 }
 
-fn change_kind(index_status: &str, worktree_status: &str, original_path: Option<&String>) -> String {
+fn change_kind(
+    index_status: &str,
+    worktree_status: &str,
+    original_path: Option<&String>,
+) -> String {
     if index_status == "U"
         || worktree_status == "U"
         || (index_status == "A" && worktree_status == "A")
@@ -946,7 +1032,12 @@ fn current_branch(target: &RepoTarget) -> Result<Option<String>, String> {
 fn current_upstream(target: &RepoTarget) -> Result<Option<String>, String> {
     match run_git_allow_codes(
         target,
-        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
         &[0, 128],
     ) {
         Ok(value) if value.is_empty() => Ok(None),

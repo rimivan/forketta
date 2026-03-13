@@ -6,6 +6,7 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
+import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,6 +32,8 @@ export function Toolbar({
   onPush,
   onSwitchRepository,
 }: ToolbarProps) {
+  const { locale, t } = useI18n();
+
   return (
     <Card className="glass-surface border-border/70 px-4 py-4 shadow-toolbar">
       <div className="flex flex-col gap-4">
@@ -55,19 +58,19 @@ export function Toolbar({
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onRefresh} disabled={busy}>
               <RefreshCw />
-              Refresh
+              {t("toolbar.refresh")}
             </Button>
             <Button variant="ghost" size="sm" onClick={onFetch} disabled={busy}>
               <RotateCcw />
-              Fetch
+              {t("toolbar.fetch")}
             </Button>
             <Button variant="ghost" size="sm" onClick={onPull} disabled={busy}>
               <ArrowDownToLine />
-              Pull
+              {t("toolbar.pull")}
             </Button>
             <Button variant="ghost" size="sm" onClick={onPush} disabled={busy}>
               <ArrowUpToLine />
-              Push
+              {t("toolbar.push")}
             </Button>
             <Button
               variant="secondary"
@@ -76,7 +79,7 @@ export function Toolbar({
               disabled={busy}
             >
               <FolderSearch2 />
-              Apri altro
+              {t("toolbar.openAnother")}
             </Button>
           </div>
         </div>
@@ -84,14 +87,16 @@ export function Toolbar({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">
             {snapshot.execution.mode === "wsl"
-              ? `WSL • ${snapshot.execution.distro ?? "auto"}`
-              : "Git nativo"}
+              ? t("toolbar.execution.wsl", {
+                  distro: snapshot.execution.distro ?? t("toolbar.auto"),
+                })
+              : t("toolbar.execution.native")}
           </Badge>
           <Badge variant="outline">
             <GitBranch className="mr-1 size-3.5" />
             {snapshot.head.detached
-              ? "HEAD detached"
-              : snapshot.head.currentBranch ?? "Nessun branch"}
+              ? t("toolbar.headDetached")
+              : snapshot.head.currentBranch ?? t("toolbar.noBranch")}
           </Badge>
           {snapshot.head.upstream ? (
             <Badge variant="outline">
@@ -100,7 +105,9 @@ export function Toolbar({
             </Badge>
           ) : null}
           <span className="ml-auto text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            Aggiornato {formatDateTime(snapshot.head.lastUpdated)}
+            {t("toolbar.updated", {
+              date: formatDateTime(snapshot.head.lastUpdated, locale),
+            })}
           </span>
         </div>
       </div>
