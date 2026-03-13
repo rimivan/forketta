@@ -1,5 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useDeferredValue, useEffect, useState, useTransition } from "react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { BranchList } from "./components/BranchList";
 import { HistoryList } from "./components/HistoryList";
 import { InspectorPanel } from "./components/InspectorPanel";
@@ -20,7 +22,6 @@ import {
   readFileDiff,
   setStageState,
 } from "./lib/api";
-import { classNames } from "./lib/format";
 import { shouldSuggestWslDistro } from "./lib/path";
 import {
   loadRecentRepositories,
@@ -518,16 +519,28 @@ export default function App() {
         );
       })
     : [];
+  const selectedCommitRecord = snapshot?.commits.find(
+    (commit) => commit.oid === selectedCommit,
+  ) ?? null;
 
   return (
-    <div className="app-shell">
-      <div className="app-backdrop" />
+    <div className="relative min-h-screen">
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.35),transparent_32%)]" />
 
       {notice ? (
-        <div className={classNames("notice", `notice-${notice.tone}`)}>
-          <strong>{notice.title}</strong>
+        <div
+          className={cn(
+            "fixed right-4 top-4 z-50 grid min-w-[280px] max-w-[min(520px,calc(100vw-2rem))] gap-1 rounded-xl border px-4 py-3 shadow-panel",
+            notice.tone === "info" && "border-border bg-card",
+            notice.tone === "warning" && "border-orange-200 bg-orange-50",
+            notice.tone === "error" && "border-red-200 bg-red-50",
+          )}
+        >
+          <strong className="text-sm font-semibold">{notice.title}</strong>
           {notice.lines.map((line) => (
-            <span key={`${notice.title}-${line}`}>{line}</span>
+            <span key={`${notice.title}-${line}`} className="text-sm text-muted-foreground">
+              {line}
+            </span>
           ))}
         </div>
       ) : null}
@@ -550,7 +563,7 @@ export default function App() {
           }}
         />
       ) : (
-        <div className="workspace-shell">
+        <div className="container relative z-10 flex min-h-screen flex-col gap-4 py-4 lg:py-6">
           <Toolbar
             snapshot={snapshot}
             busy={busy}
@@ -565,33 +578,35 @@ export default function App() {
               setSelectedChange(null);
               setCommitDetail(null);
               setFileDiff(null);
+              setActiveTab("changes");
             }}
           />
 
-          <div className="remote-strip">
+          <div className="flex flex-wrap items-center gap-2">
             {snapshot.remotes.length === 0 ? (
-              <span className="pill subtle">Nessun remote configurato</span>
+              <Badge variant="outline">Nessun remote configurato</Badge>
             ) : (
               snapshot.remotes.map((remote) => (
-                <span key={remote.name} className="pill subtle">
+                <Badge key={remote.name} variant="outline">
                   {remote.name} • {remote.fetchUrl ?? remote.pushUrl ?? "n/a"}
-                </span>
+                </Badge>
               ))
             )}
 
             {snapshot.status.clean ? (
-              <span className="pill success">working tree clean</span>
+              <Badge variant="success">working tree clean</Badge>
             ) : (
-              <span className="pill warning">
+              <Badge variant="warning">
                 {snapshot.status.stagedCount} staged • {snapshot.status.unstagedCount} unstaged •{" "}
                 {snapshot.status.untrackedCount} untracked
-              </span>
+              </Badge>
             )}
           </div>
 
-          <main className="workspace-grid">
+          <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
             <BranchList
               branches={filteredBranches}
+              status={snapshot.status}
               filter={branchFilter}
               createBranchName={createBranchName}
               busy={busy}
@@ -604,40 +619,43 @@ export default function App() {
               }
             />
 
-            <HistoryList
-              commits={snapshot.commits}
-              selectedCommit={selectedCommit}
-              onSelectCommit={(oid) => {
-                setSelectedCommit(oid);
-                setActiveTab("commit");
-              }}
-            />
+            <div className="grid min-h-0 gap-4 xl:grid-rows-[minmax(360px,1fr)_minmax(320px,0.9fr)]">
+              <HistoryList
+                commits={snapshot.commits}
+                selectedCommit={selectedCommit}
+                onSelectCommit={(oid) => {
+                  setSelectedCommit(oid);
+                  setActiveTab("commit");
+                }}
+              />
 
-            <InspectorPanel
-              status={snapshot.status}
-              activeTab={activeTab}
-              selectedChange={selectedChange}
-              fileDiff={fileDiff}
-              commitDetail={commitDetail}
-              commitMessage={commitMessage}
-              busy={busy}
-              onTabChange={setActiveTab}
-              onSelectChange={(change, staged) => {
-                setSelectedChange({
-                  path: change.path,
-                  staged,
-                  kind: change.kind,
-                });
-                setActiveTab("changes");
-              }}
-              onToggleStage={(change, staged) =>
-                void handleToggleStage(change, staged)
-              }
-              onStageAll={() => void handleStageAll()}
-              onUnstageAll={() => void handleUnstageAll()}
-              onCommitMessageChange={setCommitMessage}
-              onCommit={() => void handleCommit()}
-            />
+              <InspectorPanel
+                status={snapshot.status}
+                activeTab={activeTab}
+                selectedChange={selectedChange}
+                selectedCommitRecord={selectedCommitRecord}
+                fileDiff={fileDiff}
+                commitDetail={commitDetail}
+                commitMessage={commitMessage}
+                busy={busy}
+                onTabChange={setActiveTab}
+                onSelectChange={(change, staged) => {
+                  setSelectedChange({
+                    path: change.path,
+                    staged,
+                    kind: change.kind,
+                  });
+                  setActiveTab("changes");
+                }}
+                onToggleStage={(change, staged) =>
+                  void handleToggleStage(change, staged)
+                }
+                onStageAll={() => void handleStageAll()}
+                onUnstageAll={() => void handleUnstageAll()}
+                onCommitMessageChange={setCommitMessage}
+                onCommit={() => void handleCommit()}
+              />
+            </div>
           </main>
         </div>
       )}
@@ -652,7 +670,11 @@ export default function App() {
         />
       ) : null}
 
-      {busy ? <div className="floating-status">{actionLabel ?? "Working..."}</div> : null}
+      {busy ? (
+        <div className="fixed bottom-4 right-4 z-40 rounded-full border border-border bg-card px-4 py-2 text-sm shadow-panel">
+          {actionLabel ?? "Working..."}
+        </div>
+      ) : null}
     </div>
   );
 }

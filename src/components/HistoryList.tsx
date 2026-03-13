@@ -1,5 +1,11 @@
-import { buildCommitGraph, graphColorIndex } from "../lib/graph";
-import { classNames, formatRelativeTime } from "../lib/format";
+import { Gitgraph, TemplateName, templateExtend } from "@gitgraph/react";
+import type { GitgraphUserApi } from "@gitgraph/core";
+import { Clock3, GitCommitHorizontal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "../lib/format";
 import type { CommitRecord } from "../types";
 
 interface HistoryListProps {
@@ -8,7 +14,33 @@ interface HistoryListProps {
   onSelectCommit: (oid: string) => void;
 }
 
-const laneWidth = 16;
+const rowHeight = 52;
+const graphTemplate = templateExtend(TemplateName.Metro, {
+  colors: ["#f59e0b", "#94a3b8", "#84cc16", "#38bdf8", "#d6d3d1"],
+  branch: {
+    spacing: 22,
+    lineWidth: 3,
+    label: {
+      display: false,
+    },
+  },
+  commit: {
+    spacing: rowHeight,
+    dot: {
+      size: 5,
+      strokeColor: "#f8f6f1",
+      strokeWidth: 2,
+      font: '600 11px "Avenir Next"',
+    },
+    message: {
+      display: true,
+      displayAuthor: false,
+      displayHash: false,
+      color: "#27211a",
+      font: '500 13px "Avenir Next"',
+    },
+  },
+});
 
 function refTone(reference: string): "head" | "remote" | "tag" | "local" {
   if (reference.startsWith("HEAD")) {
@@ -23,113 +55,291 @@ function refTone(reference: string): "head" | "remote" | "tag" | "local" {
   return "local";
 }
 
+function firstInterestingRef(commit: CommitRecord): string | null {
+  return (
+    commit.refs.find((reference) => !reference.startsWith("HEAD")) ??
+    commit.refs[0] ??
+    null
+  );
+}
+
+function sanitizeBranchSeed(value: string): string {
+  const normalized = value
+    .replace(/^tag:\s*/i, "")
+    .replace(/[^\w/-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "branch";
+}
+
+function ensureBranchName(seed: string, used: Set<string>): string {
+  let candidate = sanitizeBranchSeed(seed);
+  let suffix = 1;
+  while (used.has(candidate)) {
+    suffix += 1;
+    candidate = `${sanitizeBranchSeed(seed)}-${suffix}`;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function createPrimaryChildMap(commits: CommitRecord[]): Map<string, string> {
+  const children = new Map<string, Array<{ oid: string; index: number }>>();
+
+  commits.forEach((commit, index) => {
+    commit.parents.forEach((parent) => {
+      const list = children.get(parent) ?? [];
+      list.push({ oid: commit.oid, index });
+      children.set(parent, list);
+    });
+  });
+
+  return new Map(
+    [...children.entries()].map(([parent, values]) => {
+      values.sort((left, right) => left.index - right.index);
+      return [parent, values[0]?.oid ?? ""];
+    }),
+  );
+}
+
+function renderRefBadge(reference: string) {
+  const tone = refTone(reference);
+  const variant =
+    tone === "head"
+      ? "accent"
+      : tone === "tag"
+        ? "warning"
+        : tone === "remote"
+          ? "outline"
+          : "default";
+
+  return (
+    <Badge key={reference} variant={variant}>
+      {reference}
+    </Badge>
+  );
+}
+
+function renderCommitMessage(
+  commit: CommitRecord,
+  active: boolean,
+  messageWidth: number,
+  onSelectCommit: (oid: string) => void,
+) {
+  return (
+    <foreignObject
+      x={0}
+      y={-rowHeight / 2}
+      width={messageWidth}
+      height={rowHeight}
+    >
+      <div className="h-full">
+        <button
+          type="button"
+          onClick={() => onSelectCommit(commit.oid)}
+          className={cn(
+            "flex h-[48px] w-full items-center gap-3 rounded-lg border border-transparent px-3 text-left transition-colors",
+            active
+              ? "border-amber-300 bg-amber-50 shadow-sm"
+              : "hover:border-border hover:bg-secondary/70",
+          )}
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              {commit.refs.length > 0 ? (
+                <div className="hidden shrink-0 gap-1 xl:flex">{commit.refs.map(renderRefBadge)}</div>
+              ) : null}
+              <span className="truncate text-sm font-semibold text-foreground">
+                {commit.subject}
+              </span>
+            </div>
+            {commit.refs.length > 0 ? (
+              <div className="mt-1 flex gap-1 xl:hidden">{commit.refs.slice(0, 2).map(renderRefBadge)}</div>
+            ) : null}
+          </div>
+          <div className="hidden min-w-[132px] text-sm text-muted-foreground md:block">
+            {commit.authorName}
+          </div>
+          <div className="hidden min-w-[88px] font-mono text-xs text-muted-foreground lg:block">
+            {commit.shortOid}
+          </div>
+          <div className="hidden min-w-[112px] text-right text-sm text-muted-foreground lg:block">
+            {formatRelativeTime(commit.authoredAt)}
+          </div>
+        </button>
+      </div>
+    </foreignObject>
+  );
+}
+
+function buildGraph(
+  gitgraph: GitgraphUserApi<React.ReactElement<SVGElement>>,
+  commits: CommitRecord[],
+  selectedCommit: string | null,
+  onSelectCommit: (oid: string) => void,
+  messageWidth: number,
+) {
+  gitgraph.clear();
+
+  const orderedCommits = [...commits].reverse();
+  const primaryChildMap = createPrimaryChildMap(commits);
+  const branchByCommit = new Map<string, string>();
+  const branchApiByName = new Map<string, ReturnType<typeof gitgraph.branch>>();
+  const usedBranchNames = new Set<string>();
+
+  orderedCommits.forEach((commit, index) => {
+    const commitOptions = {
+      hash: commit.oid,
+      subject: commit.subject,
+      author: `${commit.authorName} <${commit.authorEmail}>`,
+      onClick: () => onSelectCommit(commit.oid),
+      onMessageClick: () => onSelectCommit(commit.oid),
+      renderMessage: () =>
+        renderCommitMessage(
+          commit,
+          selectedCommit === commit.oid,
+          messageWidth,
+          onSelectCommit,
+        ),
+    };
+
+    if (commit.parents.length === 0) {
+      const branchName = ensureBranchName(
+        firstInterestingRef(commit) ?? (index === 0 ? "main" : `root-${index}`),
+        usedBranchNames,
+      );
+      const branchApi = gitgraph.branch(branchName);
+      branchApi.checkout().commit(commitOptions);
+      branchApiByName.set(branchName, branchApi);
+      branchByCommit.set(commit.oid, branchName);
+      return;
+    }
+
+    const primaryParent = commit.parents[0];
+    const continuationBranch = primaryParent
+      ? branchByCommit.get(primaryParent)
+      : undefined;
+
+    const shouldContinue =
+      primaryParent && primaryChildMap.get(primaryParent) === commit.oid;
+
+    let branchName =
+      continuationBranch ??
+      ensureBranchName(
+        firstInterestingRef(commit) ?? `branch-${index + 1}`,
+        usedBranchNames,
+      );
+    let branchApi =
+      (continuationBranch && branchApiByName.get(continuationBranch)) || undefined;
+
+    if (!branchApi || !shouldContinue) {
+      branchName = ensureBranchName(
+        firstInterestingRef(commit) ?? `branch-${index + 1}`,
+        usedBranchNames,
+      );
+      branchApi = gitgraph.branch({
+        name: branchName,
+        from: primaryParent,
+      });
+      branchApiByName.set(branchName, branchApi);
+    }
+
+    branchApi.checkout();
+
+    const mergeBranchName = commit.parents
+      .slice(1)
+      .map((parent) => branchByCommit.get(parent))
+      .find(Boolean);
+    const mergeBranch = mergeBranchName
+      ? branchApiByName.get(mergeBranchName)
+      : undefined;
+
+    if (mergeBranch) {
+      branchApi.merge({
+        branch: mergeBranch,
+        commitOptions,
+      });
+    } else {
+      branchApi.commit(commitOptions);
+    }
+
+    branchByCommit.set(commit.oid, branchName);
+  });
+}
+
 export function HistoryList({
   commits,
   selectedCommit,
   onSelectCommit,
 }: HistoryListProps) {
-  const graphRows = buildCommitGraph(commits);
-  const maxWidth = Math.max(1, ...graphRows.map((row) => row.width));
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [messageWidth, setMessageWidth] = useState(960);
+
+  useEffect(() => {
+    if (!containerRef.current || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.max(580, Math.floor(entry.contentRect.width - 92));
+      setMessageWidth(nextWidth);
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const graphKey = useMemo(
+    () =>
+      `${selectedCommit ?? "none"}:${messageWidth}:${commits
+        .map((commit) => commit.oid)
+        .join("|")}`,
+    [commits, messageWidth, selectedCommit],
+  );
 
   return (
-    <section className="history panel">
-      <div className="section-heading">
-        <h2>History</h2>
-        <span>{commits.length} commit caricati</span>
-      </div>
+    <Card className="glass-surface flex min-h-[360px] flex-col overflow-hidden border-border/70">
+      <CardHeader className="border-b border-border/70 pb-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>All Commits</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Commit graph costruito con `@gitgraph/react`.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <GitCommitHorizontal className="size-3.5" />
+              {commits.length} commit
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Clock3 className="size-3.5" />
+              ordine recente
+            </span>
+          </div>
+        </div>
+      </CardHeader>
 
-      <div className="history-list">
-        {graphRows.map((row) => {
-          const width = maxWidth * laneWidth;
-          const nodeX = row.lane * laneWidth + laneWidth / 2;
-          return (
-            <button
-              key={row.commit.oid}
-              className={classNames(
-                "history-row",
-                row.commit.oid === selectedCommit && "history-row-active",
-              )}
-              type="button"
-              onClick={() => onSelectCommit(row.commit.oid)}
-            >
-              <svg
-                className="graph-canvas"
-                viewBox={`0 0 ${width} 28`}
-                style={{ width }}
-                aria-hidden="true"
-              >
-                {row.topLine ? (
-                  <line
-                    x1={nodeX}
-                    x2={nodeX}
-                    y1={0}
-                    y2={14}
-                    style={{
-                      stroke: `var(--graph-${graphColorIndex(row.commit.oid)})`,
-                    }}
-                  />
-                ) : null}
-
-                {row.carries.map((segment) => (
-                  <line
-                    key={`carry-${segment.id}`}
-                    x1={segment.from * laneWidth + laneWidth / 2}
-                    x2={segment.to * laneWidth + laneWidth / 2}
-                    y1={0}
-                    y2={28}
-                    style={{
-                      stroke: `var(--graph-${graphColorIndex(segment.id)})`,
-                    }}
-                  />
-                ))}
-
-                {row.parents.map((segment) => (
-                  <line
-                    key={`parent-${segment.id}`}
-                    x1={nodeX}
-                    x2={segment.to * laneWidth + laneWidth / 2}
-                    y1={14}
-                    y2={28}
-                    style={{
-                      stroke: `var(--graph-${graphColorIndex(segment.id)})`,
-                      strokeWidth: segment.primary ? 2.6 : 1.8,
-                    }}
-                  />
-                ))}
-
-                <circle
-                  cx={nodeX}
-                  cy={14}
-                  r={4.8}
-                  style={{
-                    fill: `var(--graph-${graphColorIndex(row.commit.oid)})`,
-                  }}
-                />
-              </svg>
-
-              <div className="history-content">
-                <div className="history-topline">
-                  <strong>{row.commit.subject}</strong>
-                  <span>{formatRelativeTime(row.commit.authoredAt)}</span>
-                </div>
-
-                <div className="history-meta">
-                  <span>{row.commit.shortOid}</span>
-                  <span>{row.commit.authorName}</span>
-                  {row.commit.refs.map((reference) => (
-                    <span
-                      key={`${row.commit.oid}-${reference}`}
-                      className={`ref-badge ${refTone(reference)}`}
-                    >
-                      {reference}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </section>
+      <CardContent ref={containerRef} className="min-h-0 flex-1 overflow-auto p-0">
+        {commits.length === 0 ? (
+          <div className="p-6 text-sm text-muted-foreground">
+            Nessun commit disponibile.
+          </div>
+        ) : (
+          <div className="commit-graph min-w-[860px] px-4 py-4">
+            <Gitgraph key={graphKey} options={{ template: graphTemplate }}>
+              {(gitgraph) =>
+                buildGraph(
+                  gitgraph as GitgraphUserApi<React.ReactElement<SVGElement>>,
+                  commits,
+                  selectedCommit,
+                  onSelectCommit,
+                  messageWidth,
+                )
+              }
+            </Gitgraph>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,6 +1,17 @@
-import { classNames, formatDateTime, toTitleCase } from "../lib/format";
+import { FileText, GitCommitVertical, Layers3, Plus, SplitSquareVertical } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { formatDateTime, toTitleCase } from "../lib/format";
 import type {
   ChangeSelection,
+  CommitRecord,
   CommitDetail,
   FileChange,
   FileDiff,
@@ -11,6 +22,7 @@ interface InspectorPanelProps {
   status: WorkingTreeStatus;
   activeTab: "changes" | "commit";
   selectedChange: ChangeSelection | null;
+  selectedCommitRecord: CommitRecord | null;
   fileDiff: FileDiff | null;
   commitDetail: CommitDetail | null;
   commitMessage: string;
@@ -80,13 +92,15 @@ function ChangeSection({
   }
 
   return (
-    <div className="change-section">
-      <div className="section-heading tight">
-        <h3>{title}</h3>
-        <span>{changes.length}</span>
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          {title}
+        </h3>
+        <Badge variant="outline">{changes.length}</Badge>
       </div>
 
-      <div className="change-list">
+      <div className="grid gap-2">
         {changes.map((change) => {
           const active =
             selectedChange?.path === change.path && selectedChange.staged === staged;
@@ -94,28 +108,28 @@ function ChangeSection({
           return (
             <div
               key={`${title}-${change.path}`}
-              className={classNames("change-row", active && "change-row-active")}
+              className={cn(
+                "flex items-center gap-2 rounded-xl border border-transparent bg-background/80 p-2 transition-colors hover:bg-secondary",
+                active && "border-amber-300 bg-amber-50/80",
+              )}
             >
-              <button
-                type="button"
-                className="change-main"
-                onClick={() => onSelectChange(change, staged)}
-              >
-                <strong>{change.path}</strong>
-                <span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectChange(change, staged)}>
+                <strong className="block truncate text-sm font-medium">{change.path}</strong>
+                <span className="block text-xs text-muted-foreground">
                   {toTitleCase(change.kind)}
                   {change.originalPath ? ` • ${change.originalPath}` : ""}
                 </span>
               </button>
 
-              <button
+              <Button
                 type="button"
-                className="change-toggle"
+                size="icon"
+                variant="outline"
                 onClick={() => onToggleStage(change, !staged)}
                 disabled={busy}
               >
-                {staged ? "−" : "+"}
-              </button>
+                {staged ? "−" : <Plus className="size-4" />}
+              </Button>
             </div>
           );
         })}
@@ -128,6 +142,7 @@ export function InspectorPanel({
   status,
   activeTab,
   selectedChange,
+  selectedCommitRecord,
   fileDiff,
   commitDetail,
   commitMessage,
@@ -146,158 +161,277 @@ export function InspectorPanel({
   const conflictedChanges = sectionChanges(status.changes, "conflicted");
 
   return (
-    <section className="inspector panel">
-      <div className="inspector-tabs">
-        <button
-          type="button"
-          className={classNames(activeTab === "changes" && "tab-active")}
-          onClick={() => onTabChange("changes")}
+    <Card className="glass-surface flex min-h-[320px] flex-col overflow-hidden border-border/70">
+      <CardHeader className="border-b border-border/70 pb-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle>Inspector</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Working tree, patch e dettagli del commit selezionato.
+            </p>
+          </div>
+          <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "changes" | "commit")}>
+            <TabsList>
+              <TabsTrigger value="changes">
+                <Layers3 className="mr-2 size-4" />
+                Changes
+              </TabsTrigger>
+              <TabsTrigger value="commit">
+                <GitCommitVertical className="mr-2 size-4" />
+                Commit
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      </CardHeader>
+
+      <CardContent className="min-h-0 flex-1 pt-5">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => onTabChange(value as "changes" | "commit")}
+          className="flex h-full flex-col"
         >
-          Changes
-        </button>
-        <button
-          type="button"
-          className={classNames(activeTab === "commit" && "tab-active")}
-          onClick={() => onTabChange("commit")}
-        >
-          Commit
-        </button>
-      </div>
-
-      {activeTab === "changes" ? (
-        <>
-          <div className="summary-grid">
-            <div>
-              <strong>{status.stagedCount}</strong>
-              <span>staged</span>
-            </div>
-            <div>
-              <strong>{status.unstagedCount}</strong>
-              <span>unstaged</span>
-            </div>
-            <div>
-              <strong>{status.untrackedCount}</strong>
-              <span>untracked</span>
-            </div>
-            <div>
-              <strong>{status.conflictedCount}</strong>
-              <span>conflicts</span>
-            </div>
-          </div>
-
-          <div className="inspector-actions">
-            <button type="button" onClick={onStageAll} disabled={busy}>
-              Stage all
-            </button>
-            <button type="button" onClick={onUnstageAll} disabled={busy}>
-              Unstage all
-            </button>
-          </div>
-
-          <div className="change-sections">
-            <ChangeSection
-              title="Conflicts"
-              changes={conflictedChanges}
-              staged={false}
-              selectedChange={selectedChange}
-              busy={busy}
-              onSelectChange={onSelectChange}
-              onToggleStage={onToggleStage}
-            />
-            <ChangeSection
-              title="Staged"
-              changes={stagedChanges}
-              staged={true}
-              selectedChange={selectedChange}
-              busy={busy}
-              onSelectChange={onSelectChange}
-              onToggleStage={onToggleStage}
-            />
-            <ChangeSection
-              title="Working tree"
-              changes={unstagedChanges}
-              staged={false}
-              selectedChange={selectedChange}
-              busy={busy}
-              onSelectChange={onSelectChange}
-              onToggleStage={onToggleStage}
-            />
-            <ChangeSection
-              title="Untracked"
-              changes={untrackedChanges}
-              staged={false}
-              selectedChange={selectedChange}
-              busy={busy}
-              onSelectChange={onSelectChange}
-              onToggleStage={onToggleStage}
-            />
-          </div>
-
-          <div className="diff-panel">
-            <div className="section-heading tight">
-              <h3>Diff</h3>
-              <span>
-                {selectedChange
-                  ? `${selectedChange.staged ? "staged" : "working tree"} • ${selectedChange.path}`
-                  : "Seleziona un file"}
-              </span>
-            </div>
-
-            <pre className="diff-view">
-              {fileDiff?.diff || "Nessuna diff disponibile per la selezione corrente."}
-            </pre>
-          </div>
-
-          <div className="commit-box">
-            <label className="field compact">
-              <span>Commit message</span>
-              <textarea
-                value={commitMessage}
-                onChange={(event) => onCommitMessageChange(event.currentTarget.value)}
-                placeholder="Descrivi la modifica staged"
-                spellCheck={false}
-              />
-            </label>
-
-            <button
-              type="button"
-              className="primary-button"
-              onClick={onCommit}
-              disabled={busy || status.stagedCount === 0 || !commitMessage.trim()}
-            >
-              Commit staged
-            </button>
-          </div>
-        </>
-      ) : (
-        <div className="commit-detail">
-          {commitDetail ? (
-            <>
-              <div className="commit-header">
-                <div>
-                  <h3>{commitDetail.subject}</h3>
-                  <p>
-                    {commitDetail.authorName} • {commitDetail.authorEmail}
-                  </p>
+          <TabsContent value="changes" className="mt-0 h-full">
+            <div className="grid h-full gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <div className="grid min-h-0 gap-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ["Staged", status.stagedCount],
+                    ["Unstaged", status.unstagedCount],
+                    ["Untracked", status.untrackedCount],
+                    ["Conflicts", status.conflictedCount],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-xl border border-border/70 bg-background/80 px-3 py-3"
+                    >
+                      <div className="text-lg font-semibold">{value}</div>
+                      <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        {label}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <span>{formatDateTime(commitDetail.authoredAt)}</span>
+
+                <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-sm">Working Tree</CardTitle>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={onStageAll} disabled={busy}>
+                          Stage all
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={onUnstageAll} disabled={busy}>
+                          Unstage all
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="min-h-0 flex-1 pt-0">
+                    <ScrollArea className="h-[360px] pr-3 xl:h-full">
+                      <div className="grid gap-4">
+                        <ChangeSection
+                          title="Conflicts"
+                          changes={conflictedChanges}
+                          staged={false}
+                          selectedChange={selectedChange}
+                          busy={busy}
+                          onSelectChange={onSelectChange}
+                          onToggleStage={onToggleStage}
+                        />
+                        <ChangeSection
+                          title="Staged"
+                          changes={stagedChanges}
+                          staged={true}
+                          selectedChange={selectedChange}
+                          busy={busy}
+                          onSelectChange={onSelectChange}
+                          onToggleStage={onToggleStage}
+                        />
+                        <ChangeSection
+                          title="Working tree"
+                          changes={unstagedChanges}
+                          staged={false}
+                          selectedChange={selectedChange}
+                          busy={busy}
+                          onSelectChange={onSelectChange}
+                          onToggleStage={onToggleStage}
+                        />
+                        <ChangeSection
+                          title="Untracked"
+                          changes={untrackedChanges}
+                          staged={false}
+                          selectedChange={selectedChange}
+                          busy={busy}
+                          onSelectChange={onSelectChange}
+                          onToggleStage={onToggleStage}
+                        />
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-sm">Commit staged changes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 pt-0">
+                    <Textarea
+                      value={commitMessage}
+                      onChange={(event) => onCommitMessageChange(event.currentTarget.value)}
+                      placeholder="Descrivi la modifica staged"
+                      spellCheck={false}
+                    />
+                    <Button
+                      type="button"
+                      onClick={onCommit}
+                      disabled={busy || status.stagedCount === 0 || !commitMessage.trim()}
+                    >
+                      <GitCommitVertical />
+                      Commit staged
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
 
-              {commitDetail.body ? (
-                <pre className="commit-body">{commitDetail.body.trim()}</pre>
-              ) : null}
+              <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-sm">Diff</CardTitle>
+                    <Badge variant="outline">
+                      {selectedChange
+                        ? `${selectedChange.staged ? "staged" : "working tree"} • ${selectedChange.path}`
+                        : "Seleziona un file"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="min-h-0 flex-1 pt-0">
+                  <ScrollArea className="h-[420px] rounded-xl border border-border/70 bg-stone-950/[0.03] xl:h-full">
+                    <pre className="p-4 text-[12px] leading-5 text-foreground/90">
+                      {fileDiff?.diff ||
+                        "Nessuna diff disponibile per la selezione corrente."}
+                    </pre>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
-              <pre className="diff-view commit-diff">
-                {commitDetail.diff || "Nessuna patch disponibile per questo commit."}
-              </pre>
-            </>
-          ) : (
-            <p className="empty-state">
-              Seleziona un commit nella history per vedere dettagli e patch.
-            </p>
-          )}
-        </div>
-      )}
-    </section>
+          <TabsContent value="commit" className="mt-0 h-full">
+            {commitDetail && selectedCommitRecord ? (
+              <div className="grid h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <Card className="border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-sm">Metadata</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 pt-0">
+                    <div className="flex items-center gap-3">
+                      <Avatar>
+                        <AvatarFallback>
+                          {commitDetail.authorName
+                            .split(/\s+/)
+                            .slice(0, 2)
+                            .map((part) => part.charAt(0).toUpperCase())
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">
+                          {commitDetail.authorName}
+                        </div>
+                        <div className="truncate text-sm text-muted-foreground">
+                          {commitDetail.authorEmail}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2 text-sm">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          Data
+                        </div>
+                        <div>{formatDateTime(commitDetail.authoredAt)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          SHA
+                        </div>
+                        <div className="font-mono text-xs">{selectedCommitRecord.oid}</div>
+                      </div>
+                    </div>
+
+                    {selectedCommitRecord.refs.length > 0 ? (
+                      <>
+                        <Separator />
+                        <div className="grid gap-2">
+                          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                            Refs
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedCommitRecord.refs.map((reference) => (
+                              <Badge key={reference} variant="outline">
+                                {reference}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+
+                <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle>{commitDetail.subject}</CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Patch e messaggio del commit selezionato.
+                        </p>
+                      </div>
+                      <Badge variant="outline">
+                        <SplitSquareVertical className="mr-1 size-3.5" />
+                        {selectedCommitRecord.shortOid}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="min-h-0 flex-1 pt-0">
+                    <div className="grid h-full gap-4">
+                      {commitDetail.body ? (
+                        <div className="rounded-xl border border-border/70 bg-card p-4">
+                          <div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                            Message
+                          </div>
+                          <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+                            {commitDetail.body.trim()}
+                          </pre>
+                        </div>
+                      ) : null}
+
+                      <div className="min-h-0 flex-1 rounded-xl border border-border/70 bg-stone-950/[0.03]">
+                        <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          <FileText className="size-3.5" />
+                          Patch
+                        </div>
+                        <ScrollArea className="h-[420px] xl:h-[calc(100%-44px)]">
+                          <pre className="p-4 text-[12px] leading-5 text-foreground/90">
+                            {commitDetail.diff ||
+                              "Nessuna patch disponibile per questo commit."}
+                          </pre>
+                        </ScrollArea>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-background/70 p-6 text-sm text-muted-foreground">
+                Seleziona un commit nella history per vedere dettagli e patch.
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
   );
 }
