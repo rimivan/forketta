@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build:windows": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
