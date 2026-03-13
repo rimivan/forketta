@@ -620,6 +620,7 @@ fn git_command(target: &RepoTarget) -> Command {
                 .arg(distro)
                 .arg("--cd")
                 .arg(&target.root_path)
+                .arg("--exec")
                 .arg("git");
             command
         }
