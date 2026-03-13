@@ -1,3 +1,6 @@
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+
 interface MergeDialogProps {
   sourceBranch: string;
   targetBranch: string;
@@ -14,33 +17,25 @@ export function MergeDialog({
   onConfirm,
 }: MergeDialogProps) {
   return (
-    <div className="dialog-backdrop" role="presentation">
-      <div className="dialog panel" role="dialog" aria-modal="true">
-        <div className="section-heading">
-          <h2>Merge branch</h2>
-          <span>drag & drop workflow</span>
-        </div>
-
-        <p>
-          Il branch <strong>{sourceBranch}</strong> verrà mergiato dentro{" "}
-          <strong>{targetBranch}</strong>. Se necessario, Forketta effettuerà
-          prima il checkout del target branch.
-        </p>
-
-        <div className="dialog-actions">
-          <button type="button" onClick={onCancel} disabled={busy}>
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Merge branch</DialogTitle>
+          <DialogDescription>
+            Il branch <strong>{sourceBranch}</strong> verrà mergiato dentro{" "}
+            <strong>{targetBranch}</strong>. Se necessario, Forketta effettuerà
+            prima il checkout del target branch.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>
             Annulla
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={onConfirm}
-            disabled={busy}
-          >
+          </Button>
+          <Button type="button" onClick={onConfirm} disabled={busy}>
             {busy ? "Merge..." : "Conferma merge"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
