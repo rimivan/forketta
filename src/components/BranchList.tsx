@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Cloud, FileDiff, GitBranch, GitMerge, Plus, Search } from "lucide-react";
+import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export function BranchList({
   onCheckout,
   onMergeRequest,
 }: BranchListProps) {
+  const { locale, t } = useI18n();
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const localBranches = branches.filter((branch) => !branch.isRemote);
   const remoteBranches = branches.filter((branch) => branch.isRemote);
@@ -98,22 +100,22 @@ export function BranchList({
           <div className="min-w-0">
             <strong className="truncate text-sm font-semibold">{branch.name}</strong>
             <div className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-              {branch.shortTarget} • {formatRelativeTime(branch.committerDate)}
+              {branch.shortTarget} • {formatRelativeTime(branch.committerDate, locale)}
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap justify-end gap-1">
-            {branch.isHead ? <Badge variant="accent">Head</Badge> : null}
+            {branch.isHead ? <Badge variant="accent">{t("branch.head")}</Badge> : null}
             {branch.isProtected ? (
-              <Badge variant="outline">Core</Badge>
+              <Badge variant="outline">{t("branch.protected")}</Badge>
             ) : null}
             {branch.upstream ? (
-              <Badge variant="outline">{branch.track || "linked"}</Badge>
+              <Badge variant="outline">{branch.track || t("branch.linked")}</Badge>
             ) : null}
           </div>
         </div>
 
         <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-          {branch.subject || "Nessun commit recente"}
+          {branch.subject || t("branch.noRecentCommit")}
         </p>
       </button>
     );
@@ -124,7 +126,7 @@ export function BranchList({
       <Card className="glass-surface border-border/70">
         <CardHeader className="pb-4">
           <CardTitle className="text-sm uppercase tracking-[0.16em] text-muted-foreground">
-            Navigator
+            {t("branch.navigator")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
@@ -132,19 +134,25 @@ export function BranchList({
             <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-3">
               <div className="flex items-center gap-3">
                 <FileDiff className="size-4 text-primary" />
-                <span className="text-sm font-medium">Local Changes</span>
+                <span className="text-sm font-medium">{t("branch.localChanges")}</span>
               </div>
               <Badge variant={status.clean ? "success" : "warning"}>
-                {status.clean ? "clean" : status.stagedCount + status.unstagedCount + status.untrackedCount}
+                {status.clean
+                  ? t("branch.clean")
+                  : status.stagedCount + status.unstagedCount + status.untrackedCount}
               </Badge>
             </div>
 
             <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-3">
               <div className="flex items-center gap-3">
                 <GitMerge className="size-4 text-muted-foreground" />
-                <span className="text-sm font-medium">All Commits</span>
+                <span className="text-sm font-medium">{t("branch.allCommits")}</span>
               </div>
-              <Badge variant="outline">{localBranches.length + remoteBranches.length} refs</Badge>
+              <Badge variant="outline">
+                {t("branch.refsCount", {
+                  count: localBranches.length + remoteBranches.length,
+                })}
+              </Badge>
             </div>
           </div>
         </CardContent>
@@ -154,9 +162,9 @@ export function BranchList({
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <CardTitle>Branches</CardTitle>
+              <CardTitle>{t("branch.branches")}</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Drag & drop tra branch locali per proporre un merge.
+                {t("branch.dragDrop")}
               </p>
             </div>
             <Badge variant="outline">{localBranches.length + remoteBranches.length}</Badge>
@@ -169,7 +177,7 @@ export function BranchList({
             <Input
               value={filter}
               onChange={(event) => onFilterChange(event.currentTarget.value)}
-              placeholder="Cerca branch"
+              placeholder={t("branch.searchPlaceholder")}
               spellCheck={false}
               className="pl-9"
             />
@@ -179,7 +187,7 @@ export function BranchList({
             <Input
               value={createBranchName}
               onChange={(event) => onCreateBranchNameChange(event.currentTarget.value)}
-              placeholder="Nuovo branch"
+              placeholder={t("branch.newBranchPlaceholder")}
               spellCheck={false}
               disabled={busy}
             />
@@ -189,7 +197,7 @@ export function BranchList({
               disabled={busy || !createBranchName.trim()}
             >
               <Plus />
-              Crea
+              {t("branch.create")}
             </Button>
           </div>
 
@@ -199,9 +207,9 @@ export function BranchList({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     <GitBranch className="size-3.5" />
-                    Local
+                    {t("branch.local")}
                   </div>
-                  <span className="text-xs text-muted-foreground">merge enabled</span>
+                  <span className="text-xs text-muted-foreground">{t("branch.mergeEnabled")}</span>
                 </div>
                 <div className="grid gap-2">{localBranches.map(renderBranch)}</div>
               </section>
@@ -210,9 +218,9 @@ export function BranchList({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     <Cloud className="size-3.5" />
-                    Remote
+                    {t("branch.remote")}
                   </div>
-                  <span className="text-xs text-muted-foreground">read only</span>
+                  <span className="text-xs text-muted-foreground">{t("branch.readOnly")}</span>
                 </div>
                 <div className="grid gap-2">{remoteBranches.map(renderBranch)}</div>
               </section>

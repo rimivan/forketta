@@ -1,4 +1,5 @@
 import { FolderOpen, HardDriveDownload, MonitorSmartphone } from "lucide-react";
+import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,8 @@ export function OpenRepositoryPane({
   onOpen,
   onOpenRecent,
 }: OpenRepositoryPaneProps) {
+  const { t } = useI18n();
+
   return (
     <div className="container relative z-10 grid min-h-screen items-center gap-6 py-8 lg:py-12 xl:grid-cols-[minmax(0,1.35fr)_360px]">
       <Card className="glass-surface overflow-hidden border-border/70">
@@ -59,24 +62,27 @@ export function OpenRepositoryPane({
                     Forketta
                   </CardTitle>
                   <CardDescription className="mt-1 max-w-2xl text-base">
-                    Git client desktop con una shell pulita, commit graph leggibile
-                    e flusso rapido per repository locali e WSL.
+                    {t("landing.description")}
                   </CardDescription>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">
-                  {environment?.supportsWsl ? "WSL disponibile" : "Host locale"}
+                  {environment?.supportsWsl
+                    ? t("landing.wslAvailable")
+                    : t("landing.localHost")}
                 </Badge>
-                <Badge variant="outline">{environment?.os ?? "desktop"}</Badge>
-                <Badge variant="accent">Palette minimale</Badge>
+                <Badge variant="outline">
+                  {environment?.os ?? t("landing.desktop")}
+                </Badge>
+                <Badge variant="accent">{t("landing.minimalPalette")}</Badge>
               </div>
             </div>
 
             <div className="hidden rounded-2xl border border-border/70 bg-background/90 p-3 shadow-sm lg:block">
               <div className="grid gap-2 text-sm text-muted-foreground">
-                <span>Supportati</span>
+                <span>{t("landing.supported")}</span>
                 <code>\\wsl$\\Ubuntu\\home\\user\\repo</code>
                 <code>wsl://Ubuntu/home/user/repo</code>
                 <code>/home/user/repo + distro</code>
@@ -89,12 +95,12 @@ export function OpenRepositoryPane({
           <div className="space-y-5">
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Percorso repository
+                {t("landing.repoPathLabel")}
               </label>
               <Input
                 value={path}
                 onChange={(event) => onPathChange(event.currentTarget.value)}
-                placeholder="C:\\code\\repo oppure wsl://Ubuntu/home/user/repo"
+                placeholder={t("landing.repoPathPlaceholder")}
                 spellCheck={false}
                 className="h-12 rounded-xl bg-white/80 text-base"
               />
@@ -103,7 +109,7 @@ export function OpenRepositoryPane({
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Distro WSL opzionale
+                  {t("landing.optionalWslDistro")}
                 </label>
                 <Select
                   value={selectedDistro || "__auto__"}
@@ -113,10 +119,10 @@ export function OpenRepositoryPane({
                   disabled={!environment?.wslDistros.length || busy}
                 >
                   <SelectTrigger className="h-12 rounded-xl bg-white/80">
-                    <SelectValue placeholder="Seleziona automaticamente" />
+                    <SelectValue placeholder={t("landing.autoSelect")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__auto__">Seleziona automaticamente</SelectItem>
+                    <SelectItem value="__auto__">{t("landing.autoSelect")}</SelectItem>
                     {environment?.wslDistros.map((distro) => (
                       <SelectItem key={distro} value={distro}>
                         {distro}
@@ -128,7 +134,7 @@ export function OpenRepositoryPane({
 
               <div className="space-y-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Azioni
+                  {t("landing.actions")}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -139,7 +145,7 @@ export function OpenRepositoryPane({
                     disabled={busy}
                   >
                     <FolderOpen />
-                    Apri cartella
+                    {t("landing.openFolder")}
                   </Button>
                   <Button
                     className="h-12 flex-1 rounded-xl"
@@ -148,7 +154,7 @@ export function OpenRepositoryPane({
                     disabled={busy || !path.trim()}
                   >
                     <HardDriveDownload />
-                    {busy ? "Apertura..." : "Apri"}
+                    {busy ? t("landing.opening") : t("landing.open")}
                   </Button>
                 </div>
               </div>
@@ -158,12 +164,12 @@ export function OpenRepositoryPane({
           <div className="rounded-2xl border border-border/70 bg-secondary/40 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
               <MonitorSmartphone className="size-4 text-primary" />
-              Quick notes
+              {t("landing.quickNotes")}
             </div>
             <div className="grid gap-2 text-sm text-muted-foreground">
-              <p>Apri un repository locale o un path WSL.</p>
-              <p>La distro viene suggerita automaticamente se il contesto lo consente.</p>
-              <p>Il repository resta salvato nella lista recente per il riaccesso rapido.</p>
+              <p>{t("landing.note.openRepository")}</p>
+              <p>{t("landing.note.autoDistro")}</p>
+              <p>{t("landing.note.recents")}</p>
             </div>
           </div>
         </CardContent>
@@ -173,11 +179,13 @@ export function OpenRepositoryPane({
         <CardHeader className="border-b border-border/70 pb-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <CardTitle>Recenti</CardTitle>
-              <CardDescription>Repository aperti di recente</CardDescription>
+              <CardTitle>{t("landing.recents")}</CardTitle>
+              <CardDescription>{t("landing.recentlyOpened")}</CardDescription>
             </div>
             <Badge variant="outline">
-              {environment?.supportsWsl ? "WSL" : `Host ${environment?.os ?? "desktop"}`}
+              {environment?.supportsWsl
+                ? t("common.wsl")
+                : t("landing.host", { os: environment?.os ?? t("landing.desktop") })}
             </Badge>
           </div>
         </CardHeader>
@@ -185,7 +193,7 @@ export function OpenRepositoryPane({
           <div className="grid gap-3">
             {recentRepositories.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-background/70 p-4 text-sm text-muted-foreground">
-                Nessun repository recente. Aprine uno per memorizzarlo qui.
+                {t("landing.noRecentRepositories")}
               </div>
             ) : (
               recentRepositories.map((entry) => (
@@ -198,7 +206,9 @@ export function OpenRepositoryPane({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <strong className="truncate text-sm font-semibold">{entry.label}</strong>
-                    {entry.wslDistro ? <Badge variant="outline">WSL</Badge> : null}
+                    {entry.wslDistro ? (
+                      <Badge variant="outline">{t("common.wsl")}</Badge>
+                    ) : null}
                   </div>
                   <p className="mt-1 break-all text-sm text-muted-foreground">
                     {entry.path}

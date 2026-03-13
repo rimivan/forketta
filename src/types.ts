@@ -1,3 +1,5 @@
+import type { TranslationPayload } from "./i18n";
+
 export interface RepoRequest {
   path: string;
   wslDistro: string | null;
@@ -113,8 +115,8 @@ export interface FileDiff {
 }
 
 export interface OperationResult {
-  message: string;
-  warnings: string[];
+  message: TranslationPayload;
+  warnings: TranslationPayload[];
 }
 
 export interface ChangeSelection {
