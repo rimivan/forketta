@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useDeferredValue, useEffect, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
+import { useI18n, type TranslationKey, type TranslationPayload } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { BranchList } from "./components/BranchList";
 import { HistoryList } from "./components/HistoryList";
@@ -51,6 +52,37 @@ interface MergeState {
   sourceBranch: string;
   targetBranch: string;
 }
+
+type RepositoryAction =
+  | "openRepository"
+  | "refresh"
+  | "checkoutBranch"
+  | "createBranch"
+  | "commitChanges"
+  | "stageFile"
+  | "unstageFile"
+  | "stageAll"
+  | "unstageAll"
+  | "mergeBranches"
+  | "fetch"
+  | "pullWithStash"
+  | "push";
+
+const actionTitleKeys: Record<RepositoryAction, TranslationKey> = {
+  openRepository: "app.notice.openRepository",
+  refresh: "app.notice.refresh",
+  checkoutBranch: "app.notice.checkoutBranch",
+  createBranch: "app.notice.createBranch",
+  commitChanges: "app.notice.commitChanges",
+  stageFile: "app.notice.stageFile",
+  unstageFile: "app.notice.unstageFile",
+  stageAll: "app.notice.stageAll",
+  unstageAll: "app.notice.unstageAll",
+  mergeBranches: "app.notice.mergeBranches",
+  fetch: "app.notice.fetch",
+  pullWithStash: "app.notice.pullWithStash",
+  push: "app.notice.push",
+};
 
 function isChangeStaged(change: FileChange): boolean {
   return change.indexStatus !== ".";
@@ -111,7 +143,7 @@ function selectionStillValid(
   );
 }
 
-function toErrorMessage(error: unknown): string {
+function toErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === "string") {
     return error;
   }
@@ -120,7 +152,7 @@ function toErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return "Si è verificato un errore inatteso.";
+  return fallback;
 }
 
 function uniquePaths(paths: string[]): string[] {
@@ -128,6 +160,7 @@ function uniquePaths(paths: string[]): string[] {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [inputPath, setInputPath] = useState("");
   const [selectedDistro, setSelectedDistro] = useState("");
@@ -150,11 +183,15 @@ export default function App() {
   const [createBranchName, setCreateBranchName] = useState("");
   const [mergeState, setMergeState] = useState<MergeState | null>(null);
   const [notice, setNotice] = useState<NoticeState | null>(null);
-  const [actionLabel, setActionLabel] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<RepositoryAction | null>(null);
   const [isPending, startTransition] = useTransition();
   const deferredBranchFilter = useDeferredValue(branchFilter);
 
-  const busy = Boolean(actionLabel) || isPending;
+  const busy = Boolean(activeAction) || isPending;
+
+  function translatePayload(payload: TranslationPayload): string {
+    return t(payload.key, payload.values);
+  }
 
   useEffect(() => {
     void loadEnvironment()
@@ -162,11 +199,11 @@ export default function App() {
       .catch((error) =>
         setNotice({
           tone: "error",
-          title: "Environment",
-          lines: [toErrorMessage(error)],
+          title: t("app.notice.environment"),
+          lines: [toErrorMessage(error, t("app.error.unexpected"))],
         }),
       );
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!notice || notice.tone === "error") {
@@ -223,8 +260,8 @@ export default function App() {
         if (!cancelled) {
           setNotice({
             tone: "error",
-            title: "Commit detail",
-            lines: [toErrorMessage(error)],
+            title: t("app.notice.commitDetail"),
+            lines: [toErrorMessage(error, t("app.error.unexpected"))],
           });
         }
       });
@@ -232,7 +269,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRepository, selectedCommit]);
+  }, [activeRepository, selectedCommit, t]);
 
   useEffect(() => {
     if (!activeRepository || !selectedChange) {
@@ -256,8 +293,8 @@ export default function App() {
         if (!cancelled) {
           setNotice({
             tone: "error",
-            title: "File diff",
-            lines: [toErrorMessage(error)],
+            title: t("app.notice.fileDiff"),
+            lines: [toErrorMessage(error, t("app.error.unexpected"))],
           });
         }
       });
@@ -265,7 +302,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeRepository, selectedChange]);
+  }, [activeRepository, selectedChange, t]);
 
   async function hydrateRepository(
     request: RepoRequest,
@@ -318,56 +355,61 @@ export default function App() {
     if (!request.path) {
       setNotice({
         tone: "warning",
-        title: "Repository",
-        lines: ["Inserisci un percorso repository valido."],
+        title: t("app.notice.repository"),
+        lines: [t("app.message.validRepositoryPath")],
       });
       return;
     }
 
-    setActionLabel("Apri repository");
+    setActiveAction("openRepository");
     try {
       await hydrateRepository(request, { remember: true });
       setNotice({
         tone: "info",
-        title: "Repository aperto",
+        title: t("app.notice.repositoryOpened"),
         lines: [request.path],
       });
     } catch (error) {
       setNotice({
         tone: "error",
-        title: "Open repository",
-        lines: [toErrorMessage(error)],
+        title: t("app.notice.openRepository"),
+        lines: [toErrorMessage(error, t("app.error.unexpected"))],
       });
     } finally {
-      setActionLabel(null);
+      setActiveAction(null);
     }
   }
 
   async function runRepositoryAction(
-    label: string,
-    action: (request: RepoRequest) => Promise<OperationResult>,
+    actionName: RepositoryAction,
+    operation: (request: RepoRequest) => Promise<OperationResult>,
   ) {
     if (!activeRepository) {
       return;
     }
 
-    setActionLabel(label);
+    const title = t(actionTitleKeys[actionName]);
+
+    setActiveAction(actionName);
     try {
-      const result = await action(activeRepository);
+      const result = await operation(activeRepository);
       await hydrateRepository(activeRepository, { remember: false });
       setNotice({
         tone: result.warnings.length > 0 ? "warning" : "info",
-        title: label,
-        lines: [result.message, ...result.warnings],
+        title,
+        lines: [
+          translatePayload(result.message),
+          ...result.warnings.map(translatePayload),
+        ],
       });
     } catch (error) {
       setNotice({
         tone: "error",
-        title: label,
-        lines: [toErrorMessage(error)],
+        title,
+        lines: [toErrorMessage(error, t("app.error.unexpected"))],
       });
     } finally {
-      setActionLabel(null);
+      setActiveAction(null);
     }
   }
 
@@ -387,22 +429,22 @@ export default function App() {
       return;
     }
 
-    setActionLabel("Refresh");
+    setActiveAction("refresh");
     try {
       await hydrateRepository(activeRepository, { remember: false });
       setNotice({
         tone: "info",
-        title: "Refresh",
-        lines: ["Repository sincronizzato con lo stato locale."],
+        title: t("app.notice.refresh"),
+        lines: [t("app.message.repositorySynced")],
       });
     } catch (error) {
       setNotice({
         tone: "error",
-        title: "Refresh",
-        lines: [toErrorMessage(error)],
+        title: t("app.notice.refresh"),
+        lines: [toErrorMessage(error, t("app.error.unexpected"))],
       });
     } finally {
-      setActionLabel(null);
+      setActiveAction(null);
     }
   }
 
@@ -411,7 +453,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Checkout branch", (request) =>
+    await runRepositoryAction("checkoutBranch", (request) =>
       checkoutBranch(request, branch),
     );
   }
@@ -422,7 +464,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Create branch", (request) =>
+    await runRepositoryAction("createBranch", (request) =>
       createBranch(request, branch),
     );
     setCreateBranchName("");
@@ -434,7 +476,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Commit changes", (request) =>
+    await runRepositoryAction("commitChanges", (request) =>
       commitChanges(request, message),
     );
     setCommitMessage("");
@@ -445,7 +487,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction(staged ? "Stage file" : "Unstage file", (request) =>
+    await runRepositoryAction(staged ? "stageFile" : "unstageFile", (request) =>
       setStageState(request, [change.path], staged),
     );
   }
@@ -470,7 +512,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Stage all", (request) =>
+    await runRepositoryAction("stageAll", (request) =>
       setStageState(request, paths, true),
     );
   }
@@ -490,7 +532,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Unstage all", (request) =>
+    await runRepositoryAction("unstageAll", (request) =>
       setStageState(request, paths, false),
     );
   }
@@ -500,7 +542,7 @@ export default function App() {
       return;
     }
 
-    await runRepositoryAction("Merge branches", (request) =>
+    await runRepositoryAction("mergeBranches", (request) =>
       mergeBranches(request, mergeState.sourceBranch, mergeState.targetBranch),
     );
     setMergeState(null);
@@ -568,9 +610,9 @@ export default function App() {
             snapshot={snapshot}
             busy={busy}
             onRefresh={() => void handleRefresh()}
-            onFetch={() => void runRepositoryAction("Fetch", fetchAll)}
-            onPull={() => void runRepositoryAction("Pull + stash", pullWithStash)}
-            onPush={() => void runRepositoryAction("Push", pushCurrentBranch)}
+            onFetch={() => void runRepositoryAction("fetch", fetchAll)}
+            onPull={() => void runRepositoryAction("pullWithStash", pullWithStash)}
+            onPush={() => void runRepositoryAction("push", pushCurrentBranch)}
             onSwitchRepository={() => {
               setSnapshot(null);
               setActiveRepository(null);
@@ -584,21 +626,25 @@ export default function App() {
 
           <div className="flex flex-wrap items-center gap-2">
             {snapshot.remotes.length === 0 ? (
-              <Badge variant="outline">Nessun remote configurato</Badge>
+              <Badge variant="outline">{t("app.status.noRemoteConfigured")}</Badge>
             ) : (
               snapshot.remotes.map((remote) => (
                 <Badge key={remote.name} variant="outline">
-                  {remote.name} • {remote.fetchUrl ?? remote.pushUrl ?? "n/a"}
+                  {remote.name} •{" "}
+                  {remote.fetchUrl ?? remote.pushUrl ?? t("app.status.notAvailable")}
                 </Badge>
               ))
             )}
 
             {snapshot.status.clean ? (
-              <Badge variant="success">working tree clean</Badge>
+              <Badge variant="success">{t("app.status.clean")}</Badge>
             ) : (
               <Badge variant="warning">
-                {snapshot.status.stagedCount} staged • {snapshot.status.unstagedCount} unstaged •{" "}
-                {snapshot.status.untrackedCount} untracked
+                {t("app.status.summary", {
+                  staged: snapshot.status.stagedCount,
+                  unstaged: snapshot.status.unstagedCount,
+                  untracked: snapshot.status.untrackedCount,
+                })}
               </Badge>
             )}
           </div>
@@ -672,7 +718,7 @@ export default function App() {
 
       {busy ? (
         <div className="fixed bottom-4 right-4 z-40 rounded-full border border-border bg-card px-4 py-2 text-sm shadow-panel">
-          {actionLabel ?? "Working..."}
+          {activeAction ? t(actionTitleKeys[activeAction]) : t("app.busy.working")}
         </div>
       ) : null}
     </div>
