@@ -106,6 +106,8 @@ const englishCatalog = {
   "inspector.commitMessagePlaceholder": "Describe the staged changes",
   "inspector.commitStaged": "Commit staged",
   "inspector.diff": "Diff",
+  "inspector.diffLoading": "Loading diff...",
+  "inspector.diffError": "Unable to load the selected diff.",
   "inspector.selectedArea": "{area} • {path}",
   "inspector.stagedArea": "staged",
   "inspector.workingTreeArea": "working tree",
@@ -115,6 +117,8 @@ const englishCatalog = {
   "inspector.date": "Date",
   "inspector.sha": "SHA",
   "inspector.refs": "Refs",
+  "inspector.filesChanged": "Files changed",
+  "inspector.noFilesChanged": "No changed files were detected for this commit.",
   "inspector.commitDescription":
     "Patch and message for the selected commit.",
   "inspector.message": "Message",
@@ -272,6 +276,8 @@ const italianCatalog: TranslationCatalog = {
   "inspector.commitMessagePlaceholder": "Descrivi la modifica staged",
   "inspector.commitStaged": "Commit staged",
   "inspector.diff": "Diff",
+  "inspector.diffLoading": "Caricamento diff...",
+  "inspector.diffError": "Impossibile caricare il diff selezionato.",
   "inspector.selectedArea": "{area} • {path}",
   "inspector.stagedArea": "staged",
   "inspector.workingTreeArea": "working tree",
@@ -282,6 +288,9 @@ const italianCatalog: TranslationCatalog = {
   "inspector.date": "Data",
   "inspector.sha": "SHA",
   "inspector.refs": "Refs",
+  "inspector.filesChanged": "File modificati",
+  "inspector.noFilesChanged":
+    "Nessun file modificato rilevato per questo commit.",
   "inspector.commitDescription":
     "Patch e messaggio del commit selezionato.",
   "inspector.message": "Messaggio",

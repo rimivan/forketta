@@ -1,5 +1,12 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useDeferredValue, useEffect, useState, useTransition } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { useI18n, type TranslationKey, type TranslationPayload } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -39,7 +46,6 @@ import type {
   OperationResult,
   RepoRequest,
   RepositorySnapshot,
-  WorkingTreeStatus,
 } from "./types";
 
 interface NoticeState {
@@ -84,63 +90,27 @@ const actionTitleKeys: Record<RepositoryAction, TranslationKey> = {
   push: "app.notice.push",
 };
 
-function isChangeStaged(change: FileChange): boolean {
-  return change.indexStatus !== ".";
+function changeSelectionKey(selection: ChangeSelection): string {
+  return `${selection.staged ? "staged" : "worktree"}:${selection.kind}:${selection.path}`;
 }
 
-function isChangeUntracked(change: FileChange): boolean {
-  return change.kind === "untracked";
+function createSelection(change: FileChange, staged: boolean): ChangeSelection {
+  return {
+    path: change.path,
+    staged,
+    kind: change.kind,
+  };
 }
 
-function isChangeConflicted(change: FileChange): boolean {
-  return change.kind === "conflicted";
-}
-
-function isChangeVisibleInWorkingTree(change: FileChange): boolean {
-  return (
-    !isChangeUntracked(change) &&
-    !isChangeConflicted(change) &&
-    change.worktreeStatus !== "."
-  );
-}
-
-function supportsSelection(change: FileChange, staged: boolean): boolean {
-  return staged ? isChangeStaged(change) : isChangeVisibleInWorkingTree(change) || isChangeUntracked(change) || isChangeConflicted(change);
-}
-
-function defaultSelection(status: WorkingTreeStatus): ChangeSelection | null {
-  const staged = status.changes.find((change) => supportsSelection(change, true));
-  if (staged) {
-    return { path: staged.path, staged: true, kind: staged.kind };
-  }
-
-  const workingTree = status.changes.find((change) =>
-    supportsSelection(change, false),
-  );
-  if (workingTree) {
-    return {
-      path: workingTree.path,
-      staged: false,
-      kind: workingTree.kind,
-    };
-  }
-
-  return null;
-}
-
-function selectionStillValid(
-  status: WorkingTreeStatus,
-  selection: ChangeSelection | null,
+function isSameSelection(
+  left: ChangeSelection | null,
+  right: ChangeSelection | null,
 ): boolean {
-  if (!selection) {
+  if (!left || !right) {
     return false;
   }
 
-  return status.changes.some(
-    (change) =>
-      change.path === selection.path &&
-      supportsSelection(change, selection.staged),
-  );
+  return changeSelectionKey(left) === changeSelectionKey(right);
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {
@@ -172,11 +142,19 @@ export default function App() {
   );
   const [snapshot, setSnapshot] = useState<RepositorySnapshot | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
-  const [selectedChange, setSelectedChange] = useState<ChangeSelection | null>(
+  const [expandedChange, setExpandedChange] = useState<ChangeSelection | null>(
     null,
   );
   const [commitDetail, setCommitDetail] = useState<CommitDetail | null>(null);
-  const [fileDiff, setFileDiff] = useState<FileDiff | null>(null);
+  const [fileDiffCache, setFileDiffCache] = useState<Record<string, FileDiff>>(
+    {},
+  );
+  const [fileDiffErrors, setFileDiffErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [loadingDiffKeys, setLoadingDiffKeys] = useState<Record<string, true>>(
+    {},
+  );
   const [activeTab, setActiveTab] = useState<"changes" | "commit">("changes");
   const [commitMessage, setCommitMessage] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
@@ -186,6 +164,10 @@ export default function App() {
   const [activeAction, setActiveAction] = useState<RepositoryAction | null>(null);
   const [isPending, startTransition] = useTransition();
   const deferredBranchFilter = useDeferredValue(branchFilter);
+  const diffRequestSession = useRef(0);
+  const getUnexpectedDiffErrorMessage = useEffectEvent(() =>
+    t("app.error.unexpected"),
+  );
 
   const busy = Boolean(activeAction) || isPending;
 
@@ -217,31 +199,22 @@ export default function App() {
   useEffect(() => {
     if (!snapshot) {
       setSelectedCommit(null);
-      setSelectedChange(null);
       setCommitDetail(null);
-      setFileDiff(null);
       return;
     }
 
     if (!snapshot.commits.some((commit) => commit.oid === selectedCommit)) {
       setSelectedCommit(snapshot.commits[0]?.oid ?? null);
     }
+  }, [snapshot, selectedCommit]);
 
-    if (!selectionStillValid(snapshot.status, selectedChange)) {
-      setSelectedChange(defaultSelection(snapshot.status));
-    } else if (selectedChange) {
-      const nextChange = snapshot.status.changes.find(
-        (change) => change.path === selectedChange.path,
-      );
-      if (nextChange && nextChange.kind !== selectedChange.kind) {
-        setSelectedChange({
-          path: nextChange.path,
-          staged: selectedChange.staged,
-          kind: nextChange.kind,
-        });
-      }
-    }
-  }, [snapshot, selectedCommit, selectedChange]);
+  useEffect(() => {
+    diffRequestSession.current += 1;
+    setExpandedChange(null);
+    setFileDiffCache({});
+    setFileDiffErrors({});
+    setLoadingDiffKeys({});
+  }, [snapshot]);
 
   useEffect(() => {
     if (!activeRepository || !selectedCommit) {
@@ -272,37 +245,75 @@ export default function App() {
   }, [activeRepository, selectedCommit, t]);
 
   useEffect(() => {
-    if (!activeRepository || !selectedChange) {
-      setFileDiff(null);
+    if (!activeRepository || !expandedChange) {
       return;
     }
 
-    let cancelled = false;
+    const diffKey = changeSelectionKey(expandedChange);
+    if (fileDiffCache[diffKey] || loadingDiffKeys[diffKey]) {
+      return;
+    }
+
+    const session = diffRequestSession.current;
+    setLoadingDiffKeys((current) => ({ ...current, [diffKey]: true }));
+    setFileDiffErrors((current) => {
+      if (!(diffKey in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[diffKey];
+      return next;
+    });
+
     void readFileDiff(
       activeRepository,
-      selectedChange.path,
-      selectedChange.staged,
-      selectedChange.kind,
+      expandedChange.path,
+      expandedChange.staged,
+      expandedChange.kind,
     )
       .then((diff) => {
-        if (!cancelled) {
-          setFileDiff(diff);
+        if (diffRequestSession.current !== session) {
+          return;
         }
+
+        setFileDiffCache((current) => ({
+          ...current,
+          [diffKey]: diff,
+        }));
       })
       .catch((error) => {
-        if (!cancelled) {
-          setNotice({
-            tone: "error",
-            title: t("app.notice.fileDiff"),
-            lines: [toErrorMessage(error, t("app.error.unexpected"))],
-          });
+        if (diffRequestSession.current !== session) {
+          return;
         }
-      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRepository, selectedChange, t]);
+        setFileDiffErrors((current) => ({
+          ...current,
+          [diffKey]: toErrorMessage(error, getUnexpectedDiffErrorMessage()),
+        }));
+      })
+      .finally(() => {
+        if (diffRequestSession.current !== session) {
+          return;
+        }
+
+        setLoadingDiffKeys((current) => {
+          if (!(diffKey in current)) {
+            return current;
+          }
+
+          const next = { ...current };
+          delete next[diffKey];
+          return next;
+        });
+      });
+  }, [
+    activeRepository,
+    expandedChange,
+    fileDiffCache,
+    getUnexpectedDiffErrorMessage,
+    loadingDiffKeys,
+  ]);
 
   async function hydrateRepository(
     request: RepoRequest,
@@ -492,6 +503,13 @@ export default function App() {
     );
   }
 
+  function handleToggleChangeExpansion(change: FileChange, staged: boolean) {
+    const nextSelection = createSelection(change, staged);
+    setExpandedChange((current) =>
+      isSameSelection(current, nextSelection) ? null : nextSelection,
+    );
+  }
+
   async function handleStageAll() {
     if (!activeRepository || !snapshot) {
       return;
@@ -564,6 +582,18 @@ export default function App() {
   const selectedCommitRecord = snapshot?.commits.find(
     (commit) => commit.oid === selectedCommit,
   ) ?? null;
+  const expandedDiffKey = expandedChange
+    ? changeSelectionKey(expandedChange)
+    : null;
+  const expandedDiff = expandedDiffKey
+    ? fileDiffCache[expandedDiffKey] ?? null
+    : null;
+  const expandedDiffError = expandedDiffKey
+    ? fileDiffErrors[expandedDiffKey] ?? null
+    : null;
+  const expandedDiffLoading = expandedDiffKey
+    ? Boolean(loadingDiffKeys[expandedDiffKey])
+    : false;
 
   return (
     <div className="relative min-h-screen">
@@ -605,7 +635,7 @@ export default function App() {
           }}
         />
       ) : (
-        <div className="container relative z-10 flex min-h-screen flex-col gap-4 py-4 lg:py-6">
+        <div className="container relative z-10 flex min-h-screen flex-col gap-3 py-3 lg:h-[100svh] lg:overflow-hidden lg:py-4">
           <Toolbar
             snapshot={snapshot}
             busy={busy}
@@ -617,14 +647,16 @@ export default function App() {
               setSnapshot(null);
               setActiveRepository(null);
               setSelectedCommit(null);
-              setSelectedChange(null);
+              setExpandedChange(null);
               setCommitDetail(null);
-              setFileDiff(null);
+              setFileDiffCache({});
+              setFileDiffErrors({});
+              setLoadingDiffKeys({});
               setActiveTab("changes");
             }}
           />
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
             {snapshot.remotes.length === 0 ? (
               <Badge variant="outline">{t("app.status.noRemoteConfigured")}</Badge>
             ) : (
@@ -649,7 +681,7 @@ export default function App() {
             )}
           </div>
 
-          <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <main className="grid min-h-0 flex-1 gap-3 lg:overflow-hidden xl:grid-cols-[280px_minmax(0,1fr)]">
             <BranchList
               branches={filteredBranches}
               status={snapshot.status}
@@ -665,7 +697,7 @@ export default function App() {
               }
             />
 
-            <div className="grid min-h-0 gap-4 xl:grid-rows-[minmax(360px,1fr)_minmax(320px,0.9fr)]">
+            <div className="grid min-h-0 gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-rows-[minmax(0,0.38fr)_minmax(0,0.62fr)]">
               <HistoryList
                 commits={snapshot.commits}
                 selectedCommit={selectedCommit}
@@ -678,19 +710,17 @@ export default function App() {
               <InspectorPanel
                 status={snapshot.status}
                 activeTab={activeTab}
-                selectedChange={selectedChange}
+                expandedChange={expandedChange}
                 selectedCommitRecord={selectedCommitRecord}
-                fileDiff={fileDiff}
+                expandedDiff={expandedDiff}
+                expandedDiffError={expandedDiffError}
+                expandedDiffLoading={expandedDiffLoading}
                 commitDetail={commitDetail}
                 commitMessage={commitMessage}
                 busy={busy}
                 onTabChange={setActiveTab}
-                onSelectChange={(change, staged) => {
-                  setSelectedChange({
-                    path: change.path,
-                    staged,
-                    kind: change.kind,
-                  });
+                onToggleChangeExpansion={(change, staged) => {
+                  handleToggleChangeExpansion(change, staged);
                   setActiveTab("changes");
                 }}
                 onToggleStage={(change, staged) =>

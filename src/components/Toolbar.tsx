@@ -35,27 +35,27 @@ export function Toolbar({
   const { locale, t } = useI18n();
 
   return (
-    <Card className="glass-surface border-border/70 px-4 py-4 shadow-toolbar">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="size-3 rounded-full bg-red-400" />
-              <span className="size-3 rounded-full bg-amber-400" />
-              <span className="size-3 rounded-full bg-emerald-400" />
+    <Card className="glass-surface border-border/70 px-4 py-3 shadow-toolbar">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-red-400" />
+              <span className="size-2.5 rounded-full bg-amber-400" />
+              <span className="size-2.5 rounded-full bg-emerald-400" />
             </div>
 
             <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold tracking-[-0.03em]">
+              <h1 className="truncate text-[1.75rem] font-semibold tracking-[-0.03em] leading-none">
                 {snapshot.repository.name}
               </h1>
-              <p className="truncate text-sm text-muted-foreground">
+              <p className="mt-1 truncate text-[13px] text-muted-foreground">
                 {snapshot.execution.displayPath}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={onRefresh} disabled={busy}>
               <RefreshCw />
               {t("toolbar.refresh")}
@@ -84,7 +84,7 @@ export function Toolbar({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline">
             {snapshot.execution.mode === "wsl"
               ? t("toolbar.execution.wsl", {
@@ -104,7 +104,7 @@ export function Toolbar({
               {snapshot.head.behind > 0 ? `↓${snapshot.head.behind}` : "↓0"}
             </Badge>
           ) : null}
-          <span className="ml-auto text-xs uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="ml-auto text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
             {t("toolbar.updated", {
               date: formatDateTime(snapshot.head.lastUpdated, locale),
             })}

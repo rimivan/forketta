@@ -125,7 +125,16 @@ pub struct CommitDetail {
     pub authored_at: String,
     pub subject: String,
     pub body: String,
+    pub files: Vec<CommitFileRecord>,
     pub diff: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFileRecord {
+    pub path: String,
+    pub original_path: Option<String>,
+    pub kind: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -234,6 +243,7 @@ pub fn read_commit_detail(request: &RepoRequest, revision: &str) -> Result<Commi
             revision,
         ],
     )?;
+    let changed_files = run_git(&target, &["show", "--name-status", "--format=", revision])?;
     let (metadata, diff) = output
         .split_once('\u{001e}')
         .unwrap_or((output.as_str(), ""));
@@ -249,6 +259,7 @@ pub fn read_commit_detail(request: &RepoRequest, revision: &str) -> Result<Commi
         authored_at: fields[3].trim().to_string(),
         subject: fields[4].trim().to_string(),
         body: fields[5].trim().to_string(),
+        files: parse_commit_files(&changed_files),
         diff: diff.trim().to_string(),
     })
 }
@@ -962,6 +973,55 @@ fn change_kind(
     }
 
     "modified".to_string()
+}
+
+fn parse_commit_files(output: &str) -> Vec<CommitFileRecord> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+
+            let columns: Vec<&str> = trimmed.split('\t').collect();
+            let status = columns.first()?.chars().next()?;
+
+            match status {
+                'R' | 'C' => {
+                    if columns.len() < 3 {
+                        return None;
+                    }
+
+                    Some(CommitFileRecord {
+                        path: decode_git_path(columns[2]),
+                        original_path: Some(decode_git_path(columns[1])),
+                        kind: if status == 'R' {
+                            "renamed".to_string()
+                        } else {
+                            "copied".to_string()
+                        },
+                    })
+                }
+                'A' | 'D' | 'M' => {
+                    if columns.len() < 2 {
+                        return None;
+                    }
+
+                    Some(CommitFileRecord {
+                        path: decode_git_path(columns[1]),
+                        original_path: None,
+                        kind: match status {
+                            'A' => "added".to_string(),
+                            'D' => "deleted".to_string(),
+                            _ => "modified".to_string(),
+                        },
+                    })
+                }
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn decode_git_path(value: &str) -> String {

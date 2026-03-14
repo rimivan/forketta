@@ -48,7 +48,7 @@ export function BranchList({
       <button
         key={branch.fullName}
         className={cn(
-          "w-full rounded-xl border border-transparent bg-background/80 p-3 text-left transition-colors hover:border-border hover:bg-secondary",
+          "w-full rounded-xl border border-transparent bg-background/80 p-2.5 text-left transition-colors hover:border-border hover:bg-secondary",
           branch.isHead && "border-amber-300 bg-amber-50/80",
           dropTarget === branch.name && "border-primary bg-accent/70",
         )}
@@ -98,8 +98,8 @@ export function BranchList({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <strong className="truncate text-sm font-semibold">{branch.name}</strong>
-            <div className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+            <strong className="truncate text-[13px] font-semibold">{branch.name}</strong>
+            <div className="mt-0.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
               {branch.shortTarget} • {formatRelativeTime(branch.committerDate, locale)}
             </div>
           </div>
@@ -114,7 +114,7 @@ export function BranchList({
           </div>
         </div>
 
-        <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+        <p className="mt-1.5 line-clamp-2 text-[13px] text-muted-foreground">
           {branch.subject || t("branch.noRecentCommit")}
         </p>
       </button>
@@ -122,18 +122,18 @@ export function BranchList({
   }
 
   return (
-    <aside className="grid min-h-0 gap-4 xl:grid-rows-[auto_minmax(0,1fr)]">
+    <aside className="grid min-h-0 gap-3 xl:grid-rows-[auto_minmax(0,1fr)]">
       <Card className="glass-surface border-border/70">
-        <CardHeader className="pb-4">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm uppercase tracking-[0.16em] text-muted-foreground">
             {t("branch.navigator")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3">
+        <CardContent className="grid gap-2.5">
           <div className="grid gap-2">
-            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-3">
-              <div className="flex items-center gap-3">
-                <FileDiff className="size-4 text-primary" />
+            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <FileDiff className="size-3.5 text-primary" />
                 <span className="text-sm font-medium">{t("branch.localChanges")}</span>
               </div>
               <Badge variant={status.clean ? "success" : "warning"}>
@@ -143,9 +143,9 @@ export function BranchList({
               </Badge>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-3">
-              <div className="flex items-center gap-3">
-                <GitMerge className="size-4 text-muted-foreground" />
+            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/80 px-3 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <GitMerge className="size-3.5 text-muted-foreground" />
                 <span className="text-sm font-medium">{t("branch.allCommits")}</span>
               </div>
               <Badge variant="outline">
@@ -159,11 +159,11 @@ export function BranchList({
       </Card>
 
       <Card className="glass-surface flex min-h-0 flex-col border-border/70">
-        <CardHeader className="pb-4">
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2">
             <div>
               <CardTitle>{t("branch.branches")}</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
                 {t("branch.dragDrop")}
               </p>
             </div>
@@ -171,7 +171,7 @@ export function BranchList({
           </div>
         </CardHeader>
 
-        <CardContent className="flex min-h-0 flex-col gap-4">
+        <CardContent className="flex min-h-0 flex-col gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -190,11 +190,13 @@ export function BranchList({
               placeholder={t("branch.newBranchPlaceholder")}
               spellCheck={false}
               disabled={busy}
+              className="h-10"
             />
             <Button
               type="button"
               onClick={onCreateBranch}
               disabled={busy || !createBranchName.trim()}
+              className="h-10 px-3"
             >
               <Plus />
               {t("branch.create")}
@@ -202,7 +204,7 @@ export function BranchList({
           </div>
 
           <ScrollArea className="min-h-0 flex-1 pr-3">
-            <div className="grid gap-5">
+            <div className="grid gap-4">
               <section className="grid gap-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">

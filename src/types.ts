@@ -105,7 +105,14 @@ export interface CommitDetail {
   authoredAt: string;
   subject: string;
   body: string;
+  files: CommitFileRecord[];
   diff: string;
+}
+
+export interface CommitFileRecord {
+  path: string;
+  originalPath: string | null;
+  kind: "modified" | "added" | "deleted" | "renamed" | "copied";
 }
 
 export interface FileDiff {

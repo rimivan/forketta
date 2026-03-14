@@ -15,12 +15,12 @@ interface HistoryListProps {
   onSelectCommit: (oid: string) => void;
 }
 
-const rowHeight = 52;
+const rowHeight = 34;
 const graphTemplate = templateExtend(TemplateName.Metro, {
   colors: ["#f59e0b", "#94a3b8", "#84cc16", "#38bdf8", "#d6d3d1"],
   branch: {
-    spacing: 22,
-    lineWidth: 3,
+    spacing: 16,
+    lineWidth: 2,
     label: {
       display: false,
     },
@@ -28,17 +28,17 @@ const graphTemplate = templateExtend(TemplateName.Metro, {
   commit: {
     spacing: rowHeight,
     dot: {
-      size: 5,
+      size: 3,
       strokeColor: "#f8f6f1",
-      strokeWidth: 2,
-      font: '600 11px "Avenir Next"',
+      strokeWidth: 1,
+      font: '600 9px "Avenir Next"',
     },
     message: {
       display: true,
       displayAuthor: false,
       displayHash: false,
       color: "#27211a",
-      font: '500 13px "Avenir Next"',
+      font: '500 11px "Avenir Next"',
     },
   },
 });
@@ -139,7 +139,7 @@ function renderCommitMessage(
           type="button"
           onClick={() => onSelectCommit(commit.oid)}
           className={cn(
-            "flex h-[48px] w-full items-center gap-3 rounded-lg border border-transparent px-3 text-left transition-colors",
+            "flex h-[30px] w-full items-center gap-2 rounded-lg border border-transparent px-2 text-left transition-colors",
             active
               ? "border-amber-300 bg-amber-50 shadow-sm"
               : "hover:border-border hover:bg-secondary/70",
@@ -150,7 +150,7 @@ function renderCommitMessage(
               {commit.refs.length > 0 ? (
                 <div className="hidden shrink-0 gap-1 xl:flex">{commit.refs.map(renderRefBadge)}</div>
               ) : null}
-              <span className="truncate text-sm font-semibold text-foreground">
+              <span className="truncate text-[13px] font-semibold text-foreground">
                 {commit.subject}
               </span>
             </div>
@@ -158,13 +158,13 @@ function renderCommitMessage(
               <div className="mt-1 flex gap-1 xl:hidden">{commit.refs.slice(0, 2).map(renderRefBadge)}</div>
             ) : null}
           </div>
-          <div className="hidden min-w-[132px] text-sm text-muted-foreground md:block">
+          <div className="hidden min-w-[104px] text-[12px] text-muted-foreground md:block">
             {commit.authorName}
           </div>
-          <div className="hidden min-w-[88px] font-mono text-xs text-muted-foreground lg:block">
+          <div className="hidden min-w-[68px] font-mono text-[11px] text-muted-foreground lg:block">
             {commit.shortOid}
           </div>
-          <div className="hidden min-w-[112px] text-right text-sm text-muted-foreground lg:block">
+          <div className="hidden min-w-[92px] text-right text-[12px] text-muted-foreground lg:block">
             {formatRelativeTime(commit.authoredAt, locale)}
           </div>
         </button>
@@ -285,7 +285,7 @@ export function HistoryList({
     }
 
     const observer = new ResizeObserver(([entry]) => {
-      const nextWidth = Math.max(580, Math.floor(entry.contentRect.width - 92));
+      const nextWidth = Math.max(500, Math.floor(entry.contentRect.width - 72));
       setMessageWidth(nextWidth);
     });
 
@@ -302,16 +302,16 @@ export function HistoryList({
   );
 
   return (
-    <Card className="glass-surface flex min-h-[360px] flex-col overflow-hidden border-border/70">
-      <CardHeader className="border-b border-border/70 pb-4">
+    <Card className="glass-surface flex min-h-0 flex-col overflow-hidden border-border/70 shadow-none">
+      <CardHeader className="border-b border-border/70 pb-2.5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle>{t("history.allCommits")}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
               {t("history.graphDescription")}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <GitCommitHorizontal className="size-3.5" />
               {t("history.commitCount", { count: commits.length })}
@@ -330,7 +330,7 @@ export function HistoryList({
             {t("history.noCommits")}
           </div>
         ) : (
-          <div className="commit-graph min-w-[860px] px-4 py-4">
+          <div className="commit-graph min-w-[680px] px-2 py-2.5 lg:px-3">
             <Gitgraph key={graphKey} options={{ template: graphTemplate }}>
               {(gitgraph) =>
                 buildGraph(

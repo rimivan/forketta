@@ -1,4 +1,13 @@
-import { FileText, GitCommitVertical, Layers3, Plus, SplitSquareVertical } from "lucide-react";
+import {
+  ChevronDown,
+  FileText,
+  GitCommitVertical,
+  Layers3,
+  LoaderCircle,
+  Minus,
+  Plus,
+  SplitSquareVertical,
+} from "lucide-react";
 import { useI18n, type TranslationKey } from "@/i18n";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -22,14 +31,16 @@ import type {
 interface InspectorPanelProps {
   status: WorkingTreeStatus;
   activeTab: "changes" | "commit";
-  selectedChange: ChangeSelection | null;
+  expandedChange: ChangeSelection | null;
   selectedCommitRecord: CommitRecord | null;
-  fileDiff: FileDiff | null;
+  expandedDiff: FileDiff | null;
+  expandedDiffError: string | null;
+  expandedDiffLoading: boolean;
   commitDetail: CommitDetail | null;
   commitMessage: string;
   busy: boolean;
   onTabChange: (tab: "changes" | "commit") => void;
-  onSelectChange: (change: FileChange, staged: boolean) => void;
+  onToggleChangeExpansion: (change: FileChange, staged: boolean) => void;
   onToggleStage: (change: FileChange, staged: boolean) => void;
   onStageAll: () => void;
   onUnstageAll: () => void;
@@ -50,7 +61,11 @@ function isConflicted(change: FileChange): boolean {
 }
 
 function isUnstaged(change: FileChange): boolean {
-  return !isUntracked(change) && !isConflicted(change) && change.worktreeStatus !== ".";
+  return (
+    !isUntracked(change) &&
+    !isConflicted(change) &&
+    change.worktreeStatus !== "."
+  );
 }
 
 function sectionChanges(
@@ -69,6 +84,18 @@ function sectionChanges(
   }
 }
 
+function isExpandedChange(
+  expandedChange: ChangeSelection | null,
+  change: FileChange,
+  staged: boolean,
+): boolean {
+  return (
+    expandedChange?.path === change.path &&
+    expandedChange.staged === staged &&
+    expandedChange.kind === change.kind
+  );
+}
+
 const changeKindLabelKeys: Record<FileChange["kind"], TranslationKey> = {
   modified: "change.modified",
   added: "change.added",
@@ -83,9 +110,12 @@ interface ChangeSectionProps {
   title: string;
   changes: FileChange[];
   staged: boolean;
-  selectedChange: ChangeSelection | null;
+  expandedChange: ChangeSelection | null;
+  expandedDiff: FileDiff | null;
+  expandedDiffError: string | null;
+  expandedDiffLoading: boolean;
   busy: boolean;
-  onSelectChange: (change: FileChange, staged: boolean) => void;
+  onToggleChangeExpansion: (change: FileChange, staged: boolean) => void;
   onToggleStage: (change: FileChange, staged: boolean) => void;
 }
 
@@ -93,9 +123,12 @@ function ChangeSection({
   title,
   changes,
   staged,
-  selectedChange,
+  expandedChange,
+  expandedDiff,
+  expandedDiffError,
+  expandedDiffLoading,
   busy,
-  onSelectChange,
+  onToggleChangeExpansion,
   onToggleStage,
 }: ChangeSectionProps) {
   const { t } = useI18n();
@@ -105,7 +138,7 @@ function ChangeSection({
   }
 
   return (
-    <div className="grid gap-2">
+    <section className="grid gap-2">
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {title}
@@ -115,53 +148,106 @@ function ChangeSection({
 
       <div className="grid gap-2">
         {changes.map((change) => {
-          const active =
-            selectedChange?.path === change.path && selectedChange.staged === staged;
+          const expanded = isExpandedChange(expandedChange, change, staged);
 
           return (
             <div
-              key={`${title}-${change.path}`}
+              key={`${title}-${staged ? "staged" : "worktree"}-${change.path}`}
               className={cn(
-                "flex items-center gap-2 rounded-xl border border-transparent bg-background/80 p-2 transition-colors hover:bg-secondary",
-                active && "border-amber-300 bg-amber-50/80",
+                "overflow-hidden rounded-2xl border border-border/70 bg-background/80 transition-colors",
+                expanded && "border-amber-300/80 bg-amber-50/70 shadow-sm",
               )}
             >
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onSelectChange(change, staged)}>
-                <strong className="block truncate text-sm font-medium">{change.path}</strong>
-                <span className="block text-xs text-muted-foreground">
-                  {t(changeKindLabelKeys[change.kind])}
-                  {change.originalPath ? ` • ${change.originalPath}` : ""}
-                </span>
-              </button>
+              <div className="flex items-start gap-2 p-1.5">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-background/70"
+                  onClick={() => onToggleChangeExpansion(change, staged)}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform",
+                      expanded && "rotate-180 text-foreground",
+                    )}
+                  />
 
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                onClick={() => onToggleStage(change, !staged)}
-                disabled={busy}
-              >
-                {staged ? "−" : <Plus className="size-4" />}
-              </Button>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <strong className="truncate text-[13px] font-medium">
+                        {change.path}
+                      </strong>
+                      <Badge variant={staged ? "accent" : "outline"}>
+                        {t(changeKindLabelKeys[change.kind])}
+                      </Badge>
+                    </div>
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                      {change.originalPath
+                        ? `${t(changeKindLabelKeys[change.kind])} - ${change.originalPath}`
+                        : t(changeKindLabelKeys[change.kind])}
+                    </span>
+                  </div>
+                </button>
+
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleStage(change, !staged);
+                  }}
+                  disabled={busy}
+                >
+                  {staged ? <Minus className="size-4" /> : <Plus className="size-4" />}
+                </Button>
+              </div>
+
+              {expanded ? (
+                <div className="border-t border-border/70 bg-stone-950/[0.04]">
+                  {expandedDiffLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
+                      <LoaderCircle className="size-4 animate-spin" />
+                      {t("inspector.diffLoading")}
+                    </div>
+                  ) : expandedDiffError ? (
+                    <div className="grid gap-1 px-3 py-2.5 text-sm">
+                      <span className="font-medium text-foreground">
+                        {t("inspector.diffError")}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {expandedDiffError}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <pre className="p-3 text-[11px] leading-4 text-foreground/90">
+                        {expandedDiff?.diff.trim() ? expandedDiff.diff : t("inspector.noDiff")}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
 export function InspectorPanel({
   status,
   activeTab,
-  selectedChange,
+  expandedChange,
   selectedCommitRecord,
-  fileDiff,
+  expandedDiff,
+  expandedDiffError,
+  expandedDiffLoading,
   commitDetail,
   commitMessage,
   busy,
   onTabChange,
-  onSelectChange,
+  onToggleChangeExpansion,
   onToggleStage,
   onStageAll,
   onUnstageAll,
@@ -173,18 +259,22 @@ export function InspectorPanel({
   const unstagedChanges = sectionChanges(status.changes, "unstaged");
   const untrackedChanges = sectionChanges(status.changes, "untracked");
   const conflictedChanges = sectionChanges(status.changes, "conflicted");
+  const hasAnyChanges = status.changes.length > 0;
 
   return (
-    <Card className="glass-surface flex min-h-[320px] flex-col overflow-hidden border-border/70">
-      <CardHeader className="border-b border-border/70 pb-4">
+    <Card className="glass-surface flex min-h-0 flex-col overflow-hidden border-border/70">
+      <CardHeader className="border-b border-border/70 pb-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle>{t("inspector.title")}</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
               {t("inspector.description")}
             </p>
           </div>
-          <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as "changes" | "commit")}>
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => onTabChange(value as "changes" | "commit")}
+          >
             <TabsList>
               <TabsTrigger value="changes">
                 <Layers3 className="mr-2 size-4" />
@@ -199,85 +289,113 @@ export function InspectorPanel({
         </div>
       </CardHeader>
 
-      <CardContent className="min-h-0 flex-1 pt-5">
+      <CardContent className="min-h-0 flex-1 pt-4">
         <Tabs
           value={activeTab}
           onValueChange={(value) => onTabChange(value as "changes" | "commit")}
-          className="flex h-full flex-col"
+          className="flex h-full min-h-0 flex-col"
         >
-          <TabsContent value="changes" className="mt-0 h-full">
-            <div className="grid h-full gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <div className="grid min-h-0 gap-4">
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    [t("inspector.staged"), status.stagedCount],
-                    [t("inspector.unstaged"), status.unstagedCount],
-                    [t("inspector.untracked"), status.untrackedCount],
-                    [t("inspector.conflicts"), status.conflictedCount],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="rounded-xl border border-border/70 bg-background/80 px-3 py-3"
-                    >
-                      <div className="text-lg font-semibold">{value}</div>
-                      <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                        {label}
-                      </div>
+          <TabsContent value="changes" className="mt-0 flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+                {[
+                  [t("inspector.staged"), status.stagedCount],
+                  [t("inspector.unstaged"), status.unstagedCount],
+                  [t("inspector.untracked"), status.untrackedCount],
+                  [t("inspector.conflicts"), status.conflictedCount],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-border/70 bg-background/80 px-3 py-2.5"
+                  >
+                    <div className="text-base font-semibold leading-none">{value}</div>
+                    <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                      {label}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+              </div>
 
-                <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center justify-between gap-2">
+              <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <Card className="flex min-h-0 flex-1 flex-col border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <CardTitle className="text-sm">{t("inspector.workingTree")}</CardTitle>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={onStageAll} disabled={busy}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onStageAll}
+                          disabled={busy}
+                        >
                           {t("inspector.stageAll")}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={onUnstageAll} disabled={busy}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={onUnstageAll}
+                          disabled={busy}
+                        >
                           {t("inspector.unstageAll")}
                         </Button>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent className="min-h-0 flex-1 pt-0">
-                    <ScrollArea className="h-[360px] pr-3 xl:h-full">
-                      <div className="grid gap-4">
+                    <ScrollArea className="h-full pr-3">
+                      <div className="grid gap-3 pb-1">
+                        {!hasAnyChanges ? (
+                          <div className="rounded-xl border border-dashed border-border bg-background/70 p-3 text-sm text-muted-foreground">
+                            {t("app.status.clean")}
+                          </div>
+                        ) : null}
+
                         <ChangeSection
                           title={t("inspector.conflicts")}
                           changes={conflictedChanges}
                           staged={false}
-                          selectedChange={selectedChange}
+                          expandedChange={expandedChange}
+                          expandedDiff={expandedDiff}
+                          expandedDiffError={expandedDiffError}
+                          expandedDiffLoading={expandedDiffLoading}
                           busy={busy}
-                          onSelectChange={onSelectChange}
+                          onToggleChangeExpansion={onToggleChangeExpansion}
                           onToggleStage={onToggleStage}
                         />
                         <ChangeSection
                           title={t("inspector.staged")}
                           changes={stagedChanges}
                           staged={true}
-                          selectedChange={selectedChange}
+                          expandedChange={expandedChange}
+                          expandedDiff={expandedDiff}
+                          expandedDiffError={expandedDiffError}
+                          expandedDiffLoading={expandedDiffLoading}
                           busy={busy}
-                          onSelectChange={onSelectChange}
+                          onToggleChangeExpansion={onToggleChangeExpansion}
                           onToggleStage={onToggleStage}
                         />
                         <ChangeSection
                           title={t("inspector.workingTree")}
                           changes={unstagedChanges}
                           staged={false}
-                          selectedChange={selectedChange}
+                          expandedChange={expandedChange}
+                          expandedDiff={expandedDiff}
+                          expandedDiffError={expandedDiffError}
+                          expandedDiffLoading={expandedDiffLoading}
                           busy={busy}
-                          onSelectChange={onSelectChange}
+                          onToggleChangeExpansion={onToggleChangeExpansion}
                           onToggleStage={onToggleStage}
                         />
                         <ChangeSection
                           title={t("inspector.untracked")}
                           changes={untrackedChanges}
                           staged={false}
-                          selectedChange={selectedChange}
+                          expandedChange={expandedChange}
+                          expandedDiff={expandedDiff}
+                          expandedDiffError={expandedDiffError}
+                          expandedDiffLoading={expandedDiffLoading}
                           busy={busy}
-                          onSelectChange={onSelectChange}
+                          onToggleChangeExpansion={onToggleChangeExpansion}
                           onToggleStage={onToggleStage}
                         />
                       </div>
@@ -286,7 +404,7 @@ export function InspectorPanel({
                 </Card>
 
                 <Card className="border-border/70 bg-background/70 shadow-none">
-                  <CardHeader className="pb-4">
+                  <CardHeader className="pb-3">
                     <CardTitle className="text-sm">
                       {t("inspector.commitStagedChanges")}
                     </CardTitle>
@@ -297,6 +415,7 @@ export function InspectorPanel({
                       onChange={(event) => onCommitMessageChange(event.currentTarget.value)}
                       placeholder={t("inspector.commitMessagePlaceholder")}
                       spellCheck={false}
+                      className="min-h-[96px]"
                     />
                     <Button
                       type="button"
@@ -309,44 +428,17 @@ export function InspectorPanel({
                   </CardContent>
                 </Card>
               </div>
-
-              <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-sm">{t("inspector.diff")}</CardTitle>
-                    <Badge variant="outline">
-                      {selectedChange
-                        ? t("inspector.selectedArea", {
-                            area: t(
-                              selectedChange.staged
-                                ? "inspector.stagedArea"
-                                : "inspector.workingTreeArea",
-                            ),
-                            path: selectedChange.path,
-                          })
-                        : t("inspector.selectFile")}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="min-h-0 flex-1 pt-0">
-                  <ScrollArea className="h-[420px] rounded-xl border border-border/70 bg-stone-950/[0.03] xl:h-full">
-                    <pre className="p-4 text-[12px] leading-5 text-foreground/90">
-                      {fileDiff?.diff || t("inspector.noDiff")}
-                    </pre>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
             </div>
           </TabsContent>
 
-          <TabsContent value="commit" className="mt-0 h-full">
+          <TabsContent value="commit" className="mt-0 flex min-h-0 flex-1 flex-col">
             {commitDetail && selectedCommitRecord ? (
-              <div className="grid h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-                <Card className="border-border/70 bg-background/70 shadow-none">
-                  <CardHeader className="pb-4">
+              <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)]">
+                <Card className="min-h-0 border-border/70 bg-background/70 shadow-none">
+                  <CardHeader className="pb-3">
                     <CardTitle className="text-sm">{t("inspector.metadata")}</CardTitle>
                   </CardHeader>
-                  <CardContent className="grid gap-4 pt-0">
+                  <CardContent className="grid gap-3 overflow-auto pt-0">
                     <div className="flex items-center gap-3">
                       <Avatar>
                         <AvatarFallback>
@@ -369,13 +461,13 @@ export function InspectorPanel({
 
                     <div className="grid gap-2 text-sm">
                       <div>
-                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                           {t("inspector.date")}
                         </div>
                         <div>{formatDateTime(commitDetail.authoredAt, locale)}</div>
                       </div>
                       <div>
-                        <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                           {t("inspector.sha")}
                         </div>
                         <div className="font-mono text-xs">{selectedCommitRecord.oid}</div>
@@ -386,7 +478,7 @@ export function InspectorPanel({
                       <>
                         <Separator />
                         <div className="grid gap-2">
-                          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                             {t("inspector.refs")}
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -403,11 +495,11 @@ export function InspectorPanel({
                 </Card>
 
                 <Card className="flex min-h-0 flex-col border-border/70 bg-background/70 shadow-none">
-                  <CardHeader className="pb-4">
+                  <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <CardTitle>{commitDetail.subject}</CardTitle>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-0.5 text-[13px] text-muted-foreground">
                           {t("inspector.commitDescription")}
                         </p>
                       </div>
@@ -418,25 +510,61 @@ export function InspectorPanel({
                     </div>
                   </CardHeader>
                   <CardContent className="min-h-0 flex-1 pt-0">
-                    <div className="grid h-full gap-4">
+                    <div className="grid h-full gap-3">
                       {commitDetail.body ? (
-                        <div className="rounded-xl border border-border/70 bg-card p-4">
-                          <div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        <div className="rounded-xl border border-border/70 bg-card p-3">
+                          <div className="mb-1.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                             {t("inspector.message")}
                           </div>
-                          <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+                          <pre className="whitespace-pre-wrap text-[13px] leading-5 text-foreground">
                             {commitDetail.body.trim()}
                           </pre>
                         </div>
                       ) : null}
 
-                      <div className="min-h-0 flex-1 rounded-xl border border-border/70 bg-stone-950/[0.03]">
-                        <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                      {commitDetail.files.length > 0 ? (
+                        <div className="rounded-xl border border-border/70 bg-card/70 p-3">
+                          <div className="mb-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                            {t("inspector.filesChanged")}
+                          </div>
+                          <ScrollArea className="max-h-32 pr-2">
+                            <div className="grid gap-1.5 md:grid-cols-2">
+                              {commitDetail.files.map((file) => (
+                                <div
+                                  key={`${file.kind}:${file.originalPath ?? ""}:${file.path}`}
+                                  className="rounded-lg border border-border/60 bg-background/80 px-2.5 py-2"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline">
+                                      {t(changeKindLabelKeys[file.kind])}
+                                    </Badge>
+                                    <span className="truncate text-[13px] font-medium">
+                                      {file.path}
+                                    </span>
+                                  </div>
+                                  {file.originalPath ? (
+                                    <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                                      {file.originalPath}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border bg-card/50 p-3 text-sm text-muted-foreground">
+                          {t("inspector.noFilesChanged")}
+                        </div>
+                      )}
+
+                      <div className="min-h-0 flex flex-1 flex-col rounded-xl border border-border/70 bg-stone-950/[0.03]">
+                        <div className="flex items-center gap-2 border-b border-border/70 px-3 py-2.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                           <FileText className="size-3.5" />
                           {t("inspector.patch")}
                         </div>
-                        <ScrollArea className="h-[420px] xl:h-[calc(100%-44px)]">
-                          <pre className="p-4 text-[12px] leading-5 text-foreground/90">
+                        <ScrollArea className="min-h-0 flex-1">
+                          <pre className="p-3 text-[11px] leading-4 text-foreground/90">
                             {commitDetail.diff || t("inspector.noPatch")}
                           </pre>
                         </ScrollArea>
